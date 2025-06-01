@@ -3,7 +3,64 @@ import React, { useState, useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, View } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 
+
+
+// Register for push notifications
+const registerForPushNotifications = async (): Promise<boolean> => {
+  try {
+    console.log('📱 Starting push notification registration...');
+    
+    // Configure notification behavior first
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+    
+    if (!Device.isDevice) {
+      console.log('❌ Must use physical device for Push Notifications');
+      return false;
+    }
+
+    // Check existing permissions
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    // Request permissions if not granted
+    if (existingStatus !== 'granted') {
+      console.log('📱 Requesting notification permissions...');
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      console.log('❌ Notification permissions denied');
+      return false;
+    }
+    
+    console.log('✅ Notification permissions granted');
+    
+    // Get the push token - simplified approach
+    const token = await Notifications.getExpoPushTokenAsync();
+    
+    console.log('📱 Got push token:', token.data.substring(0, 20) + '...');
+    
+    // Send token to backend
+    await ApiService.updatePushToken(token.data);
+    console.log('✅ Push token sent to backend');
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error registering for push notifications:', error);
+    return false;
+  }
+};
 
 // API Configuration - UPDATE THIS WITH YOUR IP ADDRESS
 const API_BASE_URL = 'http://10.0.0.51:3000/api';
@@ -306,9 +363,17 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const login = (userData: User) => {
+  const login = async (userData: User) => {
     console.log('🎉 User logged in:', userData.email);
     setUser(userData);
+    
+    // Register for push notifications after login
+    try {
+      await registerForPushNotifications();
+    } catch (error) {
+      console.error('Failed to register for push notifications:', error);
+    }
+    
     // Navigation will be handled by the useEffect above
   };
 

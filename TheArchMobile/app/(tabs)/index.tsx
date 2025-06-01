@@ -181,6 +181,24 @@ export default function ArchesScreen() {
             Join Existing Arch
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#28a745', marginTop: 10, marginBottom: 40 }]}
+          onPress={async () => {
+            try {
+              console.log('🧪 Testing push notification...');
+              await ApiService.sendTestNotification();
+              Alert.alert('Success!', 'Test notification sent! Check your device in a few seconds.');
+            } catch (error: any) {
+              console.error('Test notification error:', error);
+              Alert.alert('Error', `Failed to send test notification: ${error.message}`);
+            }
+          }}
+        >
+          <Text style={styles.buttonText}>
+            🧪 Test Push Notification
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );

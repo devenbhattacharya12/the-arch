@@ -2,6 +2,7 @@ const DailyQuestion = require('../models/DailyQuestion');
 const Arch = require('../models/Arch');
 const User = require('../models/User');
 const moment = require('moment-timezone');
+const { sendSimpleNotification, sendToArchMembers } = require('./simpleNotifications');
 
 const questions = [
   "What's something you admire about {name} lately?",
@@ -20,12 +21,18 @@ const questions = [
 
 const sendDailyQuestions = async () => {
   try {
+    console.log('🌅 Starting daily question distribution...');
     const arches = await Arch.find({ isActive: true }).populate('members.user');
     
     for (const arch of arches) {
       const activeMembers = arch.members.filter(member => member.user.isActive);
       
-      if (activeMembers.length < 2) continue; // Need at least 2 people
+      if (activeMembers.length < 2) {
+        console.log(`⏭️ Skipping arch ${arch.name} - only ${activeMembers.length} members`);
+        continue;
+      }
+      
+      console.log(`📝 Creating questions for arch: ${arch.name} (${activeMembers.length} members)`);
       
       // Create questions for each member
       for (const member of activeMembers) {
@@ -47,35 +54,69 @@ const sendDailyQuestions = async () => {
           deadline,
           responses: []
         });
+        
+        // Send push notification
+        await sendSimpleNotification(
+          member.user._id,
+          '🌅 Good morning!',
+          `New question about ${aboutUser.user.name}`,
+          {
+            type: 'daily_question',
+            archId: arch._id.toString()
+          }
+        );
+        
+        console.log(`✅ Question sent to ${member.user.name} about ${aboutUser.user.name}`);
       }
     }
     
-    console.log('Daily questions sent successfully');
+    console.log('✅ Daily questions sent successfully');
   } catch (error) {
-    console.error('Error sending daily questions:', error);
+    console.error('❌ Error sending daily questions:', error);
   }
 };
 
 const processDailyResponses = async () => {
   try {
+    console.log('📝 Processing daily responses...');
+    
     const questions = await DailyQuestion.find({
       processed: false,
       deadline: { $lte: new Date() }
-    }).populate('asker aboutUser responses.user');
+    }).populate('asker aboutUser responses.user arch');
     
     for (const question of questions) {
       // Mark as processed
       question.processed = true;
       await question.save();
       
-      // Send responses to the person being asked about
-      // This would trigger notifications/socket events
-      console.log(`Processing responses for question about ${question.aboutUser.name}`);
+      // Get responses that have content (not passed)
+      const validResponses = question.responses.filter(response => 
+        !response.passed && response.response && response.response.trim().length > 0
+      );
+      
+      if (validResponses.length > 0) {
+        // Send notification to the person being asked about
+        await sendSimpleNotification(
+          question.aboutUser._id,
+          '💝 Someone shared about you!',
+          `${validResponses.length} family member${validResponses.length > 1 ? 's' : ''} shared something about you`,
+          {
+            type: 'response_shared',
+            questionId: question._id.toString(),
+            archId: question.arch._id.toString()
+          }
+        );
+        
+        console.log(`📬 Notified ${question.aboutUser.name} about ${validResponses.length} responses`);
+      }
+      
+      console.log(`✅ Processed responses for question about ${question.aboutUser.name}`);
     }
     
-    console.log('Daily responses processed successfully');
+    console.log('✅ Daily responses processed successfully');
   } catch (error) {
-    console.error('Error processing daily responses:', error);
+    console.error('❌ Error processing daily responses:', error);
   }
 };
 

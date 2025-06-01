@@ -7,6 +7,8 @@ const DailyQuestion = require('../models/DailyQuestion');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
+const { sendSimpleNotification, sendToArchMembers } = require('../services/simpleNotifications');
+
 
 // Get feed for a specific arch
 router.get('/feed/:archId', auth, async (req, res) => {
@@ -123,7 +125,21 @@ router.post('/', auth, async (req, res) => {
     await post.save();
     await post.populate('author', 'name email avatar');
     
-    console.log(`📝 User ${req.userId} created post in arch ${archId}`);
+    // Send push notifications to all arch members except the author
+    const author = await User.findById(req.userId);
+    await sendToArchMembers(
+      archId,
+      '📱 New family post',
+      `${author.name} shared something new`,
+      req.userId,
+      {
+        type: 'new_post',
+        postId: post._id.toString(),
+        archId: archId
+      }
+    );
+    
+    console.log(`📝 User ${req.userId} created post in arch ${archId} with notifications sent`);
     
     res.status(201).json(post);
   } catch (error) {

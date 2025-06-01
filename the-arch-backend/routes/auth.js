@@ -95,6 +95,29 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// Test notification endpoint (development only)
+router.post('/test-notification', auth, async (req, res) => {
+  try {
+    const { sendSimpleNotification } = require('../services/simpleNotifications');
+    
+    const result = await sendSimpleNotification(
+      req.userId,
+      '🧪 Test Notification',
+      'This is a test notification from The Arch!',
+      { type: 'test' }
+    );
+    
+    if (result) {
+      res.json({ message: 'Test notification sent successfully' });
+    } else {
+      res.status(400).json({ message: 'Failed to send test notification - check if you have a push token registered' });
+    }
+  } catch (error) {
+    console.error('Error sending test notification:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Update push token for user
 router.post('/push-token', auth, async (req, res) => {
   try {
