@@ -4,6 +4,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, View } from 'react-native';
 
+
 // API Configuration - UPDATE THIS WITH YOUR IP ADDRESS
 const API_BASE_URL = 'http://10.0.0.51:3000/api';
 
@@ -26,6 +27,8 @@ export class ApiService {
       },
       ...options,
     };
+
+    
 
     try {
       console.log('📡 Making request to:', `${API_BASE_URL}${endpoint}`);
@@ -54,8 +57,30 @@ export class ApiService {
       
       throw error;
     }
+  
   }
+// Push notification methods
+static async updatePushToken(token: string) {
+  console.log('📱 Updating push token...');
+  return this.request('/auth/push-token', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
 
+static async removePushToken() {
+  console.log('📱 Removing push token...');
+  return this.request('/auth/push-token', {
+    method: 'DELETE',
+  });
+}
+
+static async sendTestNotification() {
+  console.log('🧪 Sending test notification...');
+  return this.request('/auth/test-notification', {
+    method: 'POST',
+  });
+}
   // Auth methods
   static async login(email: string, password: string) {
     console.log('🔐 Attempting login for:', email);
@@ -232,6 +257,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     checkAuthState();
   }, []);
 
+  
+
   // Navigation effect - this is the key fix!
   useEffect(() => {
     if (loading) return; // Don't navigate while loading
@@ -331,4 +358,5 @@ function RootLayoutNav() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
     </Stack>
   );
+  
 }
