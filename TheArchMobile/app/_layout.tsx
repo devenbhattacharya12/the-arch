@@ -56,6 +56,7 @@ export class ApiService {
     }
   }
 
+  // Auth methods
   static async login(email: string, password: string) {
     console.log('🔐 Attempting login for:', email);
     return this.request('/auth/login', {
@@ -76,6 +77,7 @@ export class ApiService {
     return this.request('/auth/me');
   }
 
+  // Arch methods
   static async getArches() {
     console.log('🏠 Getting arches...');
     return this.request('/arches');
@@ -94,6 +96,98 @@ export class ApiService {
     return this.request('/arches/join', {
       method: 'POST',
       body: JSON.stringify({ inviteCode }),
+    });
+  }
+
+  // Daily Questions methods
+  static async getTodaysQuestions() {
+    console.log('📝 Getting today\'s questions...');
+    return this.request('/questions/today');
+  }
+
+  static async getQuestionsAboutMe() {
+    console.log('👤 Getting questions about me...');
+    return this.request('/questions/about-me');
+  }
+
+  static async submitQuestionResponse(questionId: string, response: string, sharedWithArch: boolean = false) {
+    console.log('💬 Submitting response for question:', questionId);
+    return this.request(`/questions/${questionId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ response, sharedWithArch }),
+    });
+  }
+
+  static async passQuestion(questionId: string) {
+    console.log('⏭️ Passing question:', questionId);
+    return this.request(`/questions/${questionId}/pass`, {
+      method: 'POST',
+    });
+  }
+
+  static async getArchQuestions(archId: string) {
+    console.log('🏠 Getting arch questions...');
+    return this.request(`/questions/arch/${archId}`);
+  }
+
+  static async getArchStats(archId: string) {
+    console.log('📊 Getting arch stats...');
+    return this.request(`/questions/arch/${archId}/stats`);
+  }
+
+  // TEMPORARY: For testing daily questions
+  static async triggerDailyQuestions() {
+    console.log('🔄 Triggering daily questions...');
+    return this.request('/questions/trigger-daily', {
+      method: 'POST',
+    });
+  }
+
+  // Family Feed API methods
+  static async getArchFeed(archId: string, page: number = 1) {
+    console.log('📰 Getting feed for arch:', archId);
+    return this.request(`/posts/feed/${archId}?page=${page}&limit=20`);
+  }
+
+  static async createPost(archId: string, content: string, media: any[] = []) {
+    console.log('📝 Creating post in arch:', archId);
+    return this.request('/posts', {
+      method: 'POST',
+      body: JSON.stringify({ archId, content, media }),
+    });
+  }
+
+  static async togglePostLike(postId: string) {
+    console.log('👍 Toggling like for post:', postId);
+    return this.request(`/posts/${postId}/like`, {
+      method: 'POST',
+    });
+  }
+
+  static async addPostComment(postId: string, content: string) {
+    console.log('💬 Adding comment to post:', postId);
+    return this.request(`/posts/${postId}/comment`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  static async deletePost(postId: string) {
+    console.log('🗑️ Deleting post:', postId);
+    return this.request(`/posts/${postId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  static async getPostDetails(postId: string) {
+    console.log('📄 Getting post details:', postId);
+    return this.request(`/posts/${postId}`);
+  }
+
+  static async shareResponseToFeed(responseId: string) {
+    console.log('📢 Sharing response to feed:', responseId);
+    return this.request(`/posts/share-response/${responseId}`, {
+      method: 'POST',
     });
   }
 }
