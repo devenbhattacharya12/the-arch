@@ -12,7 +12,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ApiService, useAuth } from '../_layout';
@@ -333,7 +332,7 @@ export default function FeedScreen() {
           style={styles.createPostButton}
           onPress={() => setShowCreatePost(true)}
         >
-          <Ionicons name="add" size={24} color="#667eea" />
+          <Ionicons name="add" size={24} color="white" />
         </TouchableOpacity>
       </View>
 
@@ -452,6 +451,12 @@ const styles = StyleSheet.create({
   },
   createPostButton: {
     padding: 5,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   archSelector: {
     backgroundColor: 'white',
