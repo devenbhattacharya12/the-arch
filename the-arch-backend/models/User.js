@@ -20,6 +20,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     minlength: 6
   },
+  pushToken: {
+    type: String,
+    default: null
+  },
   avatar: {
     type: String,
     default: null

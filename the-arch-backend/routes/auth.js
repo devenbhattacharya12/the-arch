@@ -95,4 +95,59 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// Update push token for user
+router.post('/push-token', auth, async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({ message: 'Push token is required' });
+    }
+    
+    // Update user's push token
+    await User.findByIdAndUpdate(req.userId, { pushToken: token });
+    
+    console.log(`📱 Updated push token for user ${req.userId}`);
+    res.json({ message: 'Push token updated successfully' });
+  } catch (error) {
+    console.error('Error updating push token:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Remove push token (for logout)
+router.delete('/push-token', auth, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.userId, { pushToken: null });
+    
+    console.log(`📱 Removed push token for user ${req.userId}`);
+    res.json({ message: 'Push token removed successfully' });
+  } catch (error) {
+    console.error('Error removing push token:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Test notification endpoint (development only)
+router.post('/test-notification', auth, async (req, res) => {
+  try {
+    const pushNotificationService = require('../services/pushNotificationService');
+    
+    const result = await pushNotificationService.sendToUser(req.userId, {
+      title: '🧪 Test Notification',
+      body: 'This is a test notification from The Arch!',
+      data: { type: 'test' }
+    });
+    
+    if (result) {
+      res.json({ message: 'Test notification sent successfully' });
+    } else {
+      res.status(400).json({ message: 'Failed to send test notification' });
+    }
+  } catch (error) {
+    console.error('Error sending test notification:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
