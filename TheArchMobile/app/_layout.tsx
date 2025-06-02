@@ -1,27 +1,187 @@
-// app/_layout.tsx - Fixed Navigation
+// app/_layout.tsx - The Arch Mobile App Layout
 import React, { useState, useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import Constants from 'expo-constants';
 
+// CRITICAL: Configure notification handler at the very top, immediately after imports
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
+// API Configuration - UPDATE THIS WITH YOUR IP ADDRESS
+const API_BASE_URL = 'http://10.0.0.51:3000/api';
 
-// Register for push notifications
-const registerForPushNotifications = async (): Promise<boolean> => {
+// API Service Class
+export class ApiService {
+  static async request(endpoint: string, options: any = {}) {
+    const token = await AsyncStorage.getItem('token');
+    
+    console.log('🔍 API Request:', {
+      endpoint: `${API_BASE_URL}${endpoint}`,
+      hasToken: !!token,
+      method: options.method || 'GET'
+    });
+
+    const config = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      ...options,
+    };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.log('❌ API Error:', data);
+        throw new Error(data.message || 'Something went wrong');
+      }
+      
+      console.log('✅ API Success:', endpoint);
+      return data;
+    } catch (error: any) {
+      console.log('🚨 Network Error:', error.message);
+      
+      if (error.message.includes('Network request failed')) {
+        throw new Error('Cannot connect to server. Check your WiFi connection and backend.');
+      }
+      
+      throw error;
+    }
+  }
+
+  // Push notification methods
+  static async updatePushToken(token: string) {
+    console.log('📱 Sending push token to backend...');
+    return this.request('/auth/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  static async removePushToken() {
+    return this.request('/auth/push-token', {
+      method: 'DELETE',
+    });
+  }
+
+  static async sendTestNotification() {
+    return this.request('/auth/test-notification', {
+      method: 'POST',
+    });
+  }
+
+  // Auth methods
+  static async login(email: string, password: string) {
+    return this.request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  }
+
+  static async register(name: string, email: string, password: string) {
+    return this.request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password }),
+    });
+  }
+
+  static async getCurrentUser() {
+    return this.request('/auth/me');
+  }
+
+  // Arch methods
+  static async getArches() {
+    return this.request('/arches');
+  }
+
+  static async createArch(name: string, description: string) {
+    return this.request('/arches', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    });
+  }
+
+  static async joinArch(inviteCode: string) {
+    return this.request('/arches/join', {
+      method: 'POST',
+      body: JSON.stringify({ inviteCode }),
+    });
+  }
+
+  // Questions methods
+  static async getTodaysQuestions() {
+    return this.request('/questions/today');
+  }
+
+  static async getQuestionsAboutMe() {
+    return this.request('/questions/about-me');
+  }
+
+  static async submitQuestionResponse(questionId: string, response: string, sharedWithArch: boolean = false) {
+    return this.request(`/questions/${questionId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ response, sharedWithArch }),
+    });
+  }
+
+  static async passQuestion(questionId: string) {
+    return this.request(`/questions/${questionId}/pass`, {
+      method: 'POST',
+    });
+  }
+
+  static async triggerDailyQuestions() {
+    return this.request('/questions/trigger-daily', {
+      method: 'POST',
+    });
+  }
+
+  // Feed methods
+  static async getArchFeed(archId: string, page: number = 1) {
+    return this.request(`/posts/feed/${archId}?page=${page}&limit=20`);
+  }
+
+  static async createPost(archId: string, content: string, media: any[] = []) {
+    return this.request('/posts', {
+      method: 'POST',
+      body: JSON.stringify({ archId, content, media }),
+    });
+  }
+
+  static async togglePostLike(postId: string) {
+    return this.request(`/posts/${postId}/like`, {
+      method: 'POST',
+    });
+  }
+
+  static async addPostComment(postId: string, content: string) {
+    return this.request(`/posts/${postId}/comment`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  static async shareResponseToFeed(responseId: string) {
+    return this.request(`/posts/share-response/${responseId}`, {
+      method: 'POST',
+    });
+  }
+}
+
+// Push notification registration function
+export const registerForPushNotifications = async (): Promise<boolean> => {
   try {
     console.log('📱 Starting push notification registration...');
-    
-    // Configure notification behavior first
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
     
     if (!Device.isDevice) {
       console.log('❌ Must use physical device for Push Notifications');
@@ -32,7 +192,6 @@ const registerForPushNotifications = async (): Promise<boolean> => {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     
-    // Request permissions if not granted
     if (existingStatus !== 'granted') {
       console.log('📱 Requesting notification permissions...');
       const { status } = await Notifications.requestPermissionsAsync();
@@ -46,13 +205,14 @@ const registerForPushNotifications = async (): Promise<boolean> => {
     
     console.log('✅ Notification permissions granted');
     
-    // Get the push token - simplified approach
-    const token = await Notifications.getExpoPushTokenAsync();
+    // Get push token
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: 'a80f5ae7-529d-43f3-a235-f11bd7b74d5f'
+    });
+    console.log('📱 Got push token:', tokenData.data.substring(0, 20) + '...');
     
-    console.log('📱 Got push token:', token.data.substring(0, 20) + '...');
-    
-    // Send token to backend
-    await ApiService.updatePushToken(token.data);
+    // Send to backend
+    await ApiService.updatePushToken(tokenData.data);
     console.log('✅ Push token sent to backend');
     
     return true;
@@ -62,219 +222,7 @@ const registerForPushNotifications = async (): Promise<boolean> => {
   }
 };
 
-// API Configuration - UPDATE THIS WITH YOUR IP ADDRESS
-const API_BASE_URL = 'http://10.0.0.51:3000/api';
-
-// API Service
-export class ApiService {
-  static async request(endpoint: string, options: any = {}) {
-    const token = await AsyncStorage.getItem('token');
-    
-    // Debug logging
-    console.log('🔍 API Request:', {
-      endpoint: `${API_BASE_URL}${endpoint}`,
-      hasToken: !!token,
-      token: token ? token.substring(0, 20) + '...' : 'none'
-    });
-
-    const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      ...options,
-    };
-
-    
-
-    try {
-      console.log('📡 Making request to:', `${API_BASE_URL}${endpoint}`);
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-      
-      console.log('📨 Response status:', response.status);
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.log('❌ API Error:', data);
-        throw new Error(data.message || 'Something went wrong');
-      }
-      
-      console.log('✅ API Success:', endpoint);
-      return data;
-    } catch (error: any) {
-      console.log('🚨 Network Error:', error.message);
-      
-      // More specific error messages
-      if (error.message.includes('Network request failed')) {
-        throw new Error('Cannot connect to server. Check your WiFi connection and backend.');
-      } else if (error.message.includes('fetch')) {
-        throw new Error(`Server not reachable at ${API_BASE_URL}`);
-      }
-      
-      throw error;
-    }
-  
-  }
-// Push notification methods
-static async updatePushToken(token: string) {
-  console.log('📱 Updating push token...');
-  return this.request('/auth/push-token', {
-    method: 'POST',
-    body: JSON.stringify({ token }),
-  });
-}
-
-static async removePushToken() {
-  console.log('📱 Removing push token...');
-  return this.request('/auth/push-token', {
-    method: 'DELETE',
-  });
-}
-
-static async sendTestNotification() {
-  console.log('🧪 Sending test notification...');
-  return this.request('/auth/test-notification', {
-    method: 'POST',
-  });
-}
-  // Auth methods
-  static async login(email: string, password: string) {
-    console.log('🔐 Attempting login for:', email);
-    return this.request('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-  }
-
-  static async register(name: string, email: string, password: string) {
-    console.log('📝 Attempting registration for:', email);
-    return this.request('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ name, email, password }),
-    });
-  }
-
-  static async getCurrentUser() {
-    return this.request('/auth/me');
-  }
-
-  // Arch methods
-  static async getArches() {
-    console.log('🏠 Getting arches...');
-    return this.request('/arches');
-  }
-
-  static async createArch(name: string, description: string) {
-    console.log('🏗️ Creating arch:', name);
-    return this.request('/arches', {
-      method: 'POST',
-      body: JSON.stringify({ name, description }),
-    });
-  }
-
-  static async joinArch(inviteCode: string) {
-    console.log('🔗 Joining arch with code:', inviteCode);
-    return this.request('/arches/join', {
-      method: 'POST',
-      body: JSON.stringify({ inviteCode }),
-    });
-  }
-
-  // Daily Questions methods
-  static async getTodaysQuestions() {
-    console.log('📝 Getting today\'s questions...');
-    return this.request('/questions/today');
-  }
-
-  static async getQuestionsAboutMe() {
-    console.log('👤 Getting questions about me...');
-    return this.request('/questions/about-me');
-  }
-
-  static async submitQuestionResponse(questionId: string, response: string, sharedWithArch: boolean = false) {
-    console.log('💬 Submitting response for question:', questionId);
-    return this.request(`/questions/${questionId}/respond`, {
-      method: 'POST',
-      body: JSON.stringify({ response, sharedWithArch }),
-    });
-  }
-
-  static async passQuestion(questionId: string) {
-    console.log('⏭️ Passing question:', questionId);
-    return this.request(`/questions/${questionId}/pass`, {
-      method: 'POST',
-    });
-  }
-
-  static async getArchQuestions(archId: string) {
-    console.log('🏠 Getting arch questions...');
-    return this.request(`/questions/arch/${archId}`);
-  }
-
-  static async getArchStats(archId: string) {
-    console.log('📊 Getting arch stats...');
-    return this.request(`/questions/arch/${archId}/stats`);
-  }
-
-  // TEMPORARY: For testing daily questions
-  static async triggerDailyQuestions() {
-    console.log('🔄 Triggering daily questions...');
-    return this.request('/questions/trigger-daily', {
-      method: 'POST',
-    });
-  }
-
-  // Family Feed API methods
-  static async getArchFeed(archId: string, page: number = 1) {
-    console.log('📰 Getting feed for arch:', archId);
-    return this.request(`/posts/feed/${archId}?page=${page}&limit=20`);
-  }
-
-  static async createPost(archId: string, content: string, media: any[] = []) {
-    console.log('📝 Creating post in arch:', archId);
-    return this.request('/posts', {
-      method: 'POST',
-      body: JSON.stringify({ archId, content, media }),
-    });
-  }
-
-  static async togglePostLike(postId: string) {
-    console.log('👍 Toggling like for post:', postId);
-    return this.request(`/posts/${postId}/like`, {
-      method: 'POST',
-    });
-  }
-
-  static async addPostComment(postId: string, content: string) {
-    console.log('💬 Adding comment to post:', postId);
-    return this.request(`/posts/${postId}/comment`, {
-      method: 'POST',
-      body: JSON.stringify({ content }),
-    });
-  }
-
-  static async deletePost(postId: string) {
-    console.log('🗑️ Deleting post:', postId);
-    return this.request(`/posts/${postId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  static async getPostDetails(postId: string) {
-    console.log('📄 Getting post details:', postId);
-    return this.request(`/posts/${postId}`);
-  }
-
-  static async shareResponseToFeed(responseId: string) {
-    console.log('📢 Sharing response to feed:', responseId);
-    return this.request(`/posts/share-response/${responseId}`, {
-      method: 'POST',
-    });
-  }
-}
-
-// Auth Context
+// Auth Context Types
 interface User {
   id: string;
   name: string;
@@ -283,18 +231,20 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  login: (userData: User) => void;
+  login: (userData: User) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
 }
 
+// Create Auth Context
 export const AuthContext = React.createContext<AuthContextType>({
   user: null,
-  login: () => {},
+  login: async () => {},
   logout: async () => {},
   loading: true,
 });
 
+// useAuth hook
 export const useAuth = () => {
   const context = React.useContext(AuthContext);
   if (!context) {
@@ -303,25 +253,24 @@ export const useAuth = () => {
   return context;
 };
 
-// Updated Auth Provider with Navigation Logic
+// Auth Provider Component
 const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const segments = useSegments();
 
+  // Check auth state on mount
   useEffect(() => {
     checkAuthState();
   }, []);
 
-  
-
-  // Navigation effect - this is the key fix!
+  // Handle navigation based on auth state
   useEffect(() => {
-    if (loading) return; // Don't navigate while loading
+    if (loading) return;
 
     const inAuthGroup = segments[0] === '(tabs)';
-
+    
     console.log('🧭 Navigation check:', {
       hasUser: !!user,
       inAuthGroup,
@@ -329,11 +278,9 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     if (user && !inAuthGroup) {
-      // User is logged in but not in protected routes, redirect to tabs
-      console.log('🏠 Redirecting to main app (tabs)');
+      console.log('🏠 Redirecting to main app');
       router.replace('/(tabs)');
     } else if (!user && inAuthGroup) {
-      // User is not logged in but in protected routes, redirect to login
       console.log('🔐 Redirecting to login');
       router.replace('/login');
     }
@@ -345,14 +292,12 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const userData = await AsyncStorage.getItem('user');
       
       console.log('🔍 Checking auth state...');
-      console.log('🎫 Token exists:', !!token);
-      console.log('👤 User data exists:', !!userData);
       
       if (token && userData) {
-        console.log('✅ User found in storage, auto-logging in');
+        console.log('✅ User found in storage');
         setUser(JSON.parse(userData));
       } else {
-        console.log('❌ No user found, should show login screen');
+        console.log('❌ No user found');
         setUser(null);
       }
     } catch (error) {
@@ -367,34 +312,43 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     console.log('🎉 User logged in:', userData.email);
     setUser(userData);
     
-    // Register for push notifications after login
+    // IMPORTANT: Register for push notifications after login
+    console.log('📱 Starting push notification setup...');
     try {
-      await registerForPushNotifications();
+      const success = await registerForPushNotifications();
+      if (success) {
+        console.log('✅ Push notifications registered successfully');
+      } else {
+        console.log('⚠️ Push notification registration failed - continuing anyway');
+      }
     } catch (error) {
-      console.error('Failed to register for push notifications:', error);
+      console.error('❌ Push notification setup error:', error);
+      console.log('ℹ️ App will continue without push notifications');
     }
-    
-    // Navigation will be handled by the useEffect above
   };
 
   const logout = async () => {
     console.log('👋 User logging out');
+    
+    try {
+      await ApiService.removePushToken();
+    } catch (error) {
+      console.error('Error removing push token:', error);
+    }
+    
     await AsyncStorage.removeItem('token');
     await AsyncStorage.removeItem('user');
     setUser(null);
-    // Navigation will be handled by the useEffect above
   };
 
-  const value = {
-    user,
-    login,
-    logout,
-    loading,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
+// Root Layout Component
 export default function RootLayout() {
   return (
     <AuthProvider>
@@ -403,25 +357,29 @@ export default function RootLayout() {
   );
 }
 
+// Navigation Layout
 function RootLayoutNav() {
   const { loading } = useAuth();
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8f9fa' }}>
+      <View style={{ 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        backgroundColor: '#f8f9fa' 
+      }}>
         <ActivityIndicator size="large" color="#667eea" />
       </View>
     );
   }
 
-  // Simplified layout - let the navigation logic in AuthProvider handle routing
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="register" options={{ headerShown: false }} />
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="register" />
+      <Stack.Screen name="index" />
     </Stack>
   );
-  
 }

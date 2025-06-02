@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - Arches Screen
+// app/(tabs)/index.tsx - Arches Screen with Push Registration
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, ApiService } from '../_layout';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 
 interface Arch {
   _id: string;
@@ -108,6 +110,50 @@ export default function ArchesScreen() {
     );
   };
 
+  // NEW: Manual push notification registration
+  const setupPushNotifications = async () => {
+    try {
+      console.log('📱 Manual push notification setup...');
+      
+      if (!Device.isDevice) {
+        Alert.alert('Device Required', 'Push notifications only work on physical devices, not simulators.');
+        return;
+      }
+
+      // Check/request permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        console.log('📱 Requesting notification permissions...');
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      if (finalStatus !== 'granted') {
+        Alert.alert('Permissions Required', 'Please allow notifications in your device settings to receive family updates.');
+        return;
+      }
+      
+      console.log('✅ Notification permissions granted');
+      
+      // Get push token with project ID - using the ID from your EAS setup
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: 'a80f5ae7-529d-43f3-a235-f11bd7b74d5f'
+      });
+      console.log('📱 Got push token:', tokenData.data.substring(0, 20) + '...');
+      
+      // Send to backend
+      await ApiService.updatePushToken(tokenData.data);
+      console.log('✅ Push token sent to backend');
+      
+      Alert.alert('Success!', 'Push notifications are now set up! You should receive notifications for family activities.');
+    } catch (error: any) {
+      console.error('Manual push setup error:', error);
+      Alert.alert('Error', `Failed to set up push notifications: ${error.message}`);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -174,11 +220,21 @@ export default function ArchesScreen() {
         )}
 
         <TouchableOpacity
-          style={[styles.button, styles.secondaryButton, { marginTop: 20, marginBottom: 40 }]}
+          style={[styles.button, styles.secondaryButton, { marginTop: 20, marginBottom: 10 }]}
           onPress={showJoinArchModal}
         >
           <Text style={[styles.buttonText, { color: '#667eea' }]}>
             Join Existing Arch
+          </Text>
+        </TouchableOpacity>
+
+        {/* NEW: Push Notification Setup Button */}
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: '#28a745', marginTop: 10, marginBottom: 10 }]}
+          onPress={setupPushNotifications}
+        >
+          <Text style={styles.buttonText}>
+            📱 Set Up Push Notifications
           </Text>
         </TouchableOpacity>
 
