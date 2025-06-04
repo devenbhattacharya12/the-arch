@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Arch - App Assets Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            margin: 0;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        
+        .assets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .asset-card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid #e9ecef;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .asset-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .asset-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .asset-preview {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 15px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .icon-preview {
+            border-radius: 40px;
+        }
+        
+        .splash-preview {
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .adaptive-preview {
+            border-radius: 50%;
+        }
+        
+        .notification-preview {
+            width: 96px;
+            height: 96px;
+            border-radius: 15px;
+        }
+        
+        .favicon-preview {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+        }
+        
+        .arch-symbol {
+            color: white;
+            font-size: 4em;
+            font-weight: bold;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .small-arch {
+            font-size: 2em;
+        }
+        
+        .tiny-arch {
+            font-size: 1.2em;
+        }
+        
+        .family-icons {
+            position: absolute;
+            color: rgba(255,255,255,0.3);
+            font-size: 1.5em;
+        }
+        
+        .family-icons .icon1 { top: 20px; left: 20px; }
+        .family-icons .icon2 { top: 20px; right: 20px; }
+        .family-icons .icon3 { bottom: 20px; left: 20px; }
+        .family-icons .icon4 { bottom: 20px; right: 20px; }
+        
+        .download-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s;
+            margin: 5px;
+        }
+        
+        .download-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .size-info {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+        
+        .instructions {
+            background: #e8f4fd;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+        }
+        
+        .instructions h3 {
+            color: #333;
+            margin-top: 0;
+        }
+        
+        .file-structure {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            margin: 15px 0;
+            border: 1px solid #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏛️ The Arch</h1>
+        <p class="subtitle">Beautiful App Assets for Your Family Connection App</p>
+        
+        <div class="assets-grid">
+            <!-- App Icon -->
+            <div class="asset-card">
+                <h3>📱 App Icon</h3>
+                <div class="asset-preview icon-preview">
+                    <div class="arch-symbol">🏛️</div>
+                    <div class="family-icons">
+                        <span class="icon1">👨</span>
+                        <span class="icon2">👩</span>
+                        <span class="icon3">👧</span>
+                        <span class="icon4">👦</span>
+                    </div>
+                </div>
+                <div class="size-info">1024 × 1024 px</div>
+                <button class="download-btn" onclick="downloadAsset('icon', 1024, 1024)">Download icon.png</button>
+            </div>
+            
+            <!-- Splash Screen -->
+            <div class="asset-card">
+                <h3>🌅 Splash Screen</h3>
+                <div class="asset-preview splash-preview">
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 5em; margin-bottom: 10px;">🏛️</div>
+                        <div style="font-size: 1.8em; font-weight: bold; text-shadow: 0 2px 10px rgba(0,0,0,0.3);">The Arch</div>
+                        <div style="font-size: 1em; opacity: 0.9; margin-top: 5px;">Family Connection</div>
+                    </div>
+                </div>
+                <div class="size-info">1242 × 2436 px</div>
+                <button class="download-btn" onclick="downloadAsset('splash', 1242, 2436)">Download splash.png</button>
+            </div>
+            
+            <!-- Adaptive Icon -->
+            <div class="asset-card">
+                <h3>🤖 Android Adaptive Icon</h3>
+                <div class="asset-preview adaptive-preview">
+                    <div class="arch-symbol">🏛️</div>
+                </div>
+                <div class="size-info">1024 × 1024 px</div>
+                <button class="download-btn" onclick="downloadAsset('adaptive', 1024, 1024)">Download adaptive-icon.png</button>
+            </div>
+            
+            <!-- Notification Icon -->
+            <div class="asset-card">
+                <h3>🔔 Notification Icon</h3>
+                <div class="asset-preview notification-preview">
+                    <div class="arch-symbol small-arch">🏛️</div>
+                </div>
+                <div class="size-info">96 × 96 px</div>
+                <button class="download-btn" onclick="downloadAsset('notification', 96, 96)">Download notification-icon.png</button>
+            </div>
+            
+            <!-- Favicon -->
+            <div class="asset-card">
+                <h3>🌐 Web Favicon</h3>
+                <div class="asset-preview favicon-preview">
+                    <div class="arch-symbol tiny-arch">🏛️</div>
+                </div>
+                <div class="size-info">48 × 48 px</div>
+                <button class="download-btn" onclick="downloadAsset('favicon', 48, 48)">Download favicon.png</button>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3>📁 How to Use These Assets</h3>
+            <p><strong>1. Download all assets</strong> by clicking the buttons above</p>
+            <p><strong>2. Create an assets folder</strong> in your Expo project root:</p>
+            
+            <div class="file-structure">
+your-expo-app/
+├── assets/
+│   ├── icon.png
+│   ├── splash.png
+│   ├── adaptive-icon.png
+│   ├── notification-icon.png
+│   └── favicon.png
+├── app.json
+└── ...other files
+            </div>
+            
+            <p><strong>3. Update your app.json</strong> to reference these assets</p>
+            <p><strong>4. Run your build:</strong> <code>eas build --platform android --profile preview</code></p>
+            
+            <h3>🎨 Design Notes</h3>
+            <ul>
+                <li><strong>Color Scheme:</strong> Purple gradient (#667eea to #764ba2) representing connection and family</li>
+                <li><strong>Symbol:</strong> 🏛️ Arch represents strength, foundation, and family structure</li>
+                <li><strong>Family Elements:</strong> Subtle family icons showing the app's purpose</li>
+                <li><strong>Modern Design:</strong> Clean, friendly, and approachable for all family members</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function downloadAsset(type, width, height) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Create gradient background
+            const gradient = ctx.createLinearGradient(0, 0, width, height);
+            gradient.addColorStop(0, '#667eea');
+            gradient.addColorStop(1, '#764ba2');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+            
+            // Configure text
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'white';
+            ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetY = 2;
+            
+            if (type === 'splash') {
+                // Splash screen with title
+                ctx.font = `${width * 0.15}px Arial`;
+                ctx.fillText('🏛️', width/2, height/2 - width * 0.1);
+                
+                ctx.font = `bold ${width * 0.06}px Arial`;
+                ctx.fillText('The Arch', width/2, height/2 + width * 0.05);
+                
+                ctx.font = `${width * 0.03}px Arial`;
+                ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                ctx.fillText('Family Connection', width/2, height/2 + width * 0.1);
+                
+                // Add family icons in corners
+                ctx.font = `${width * 0.04}px Arial`;
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillText('👨', width * 0.15, height * 0.15);
+                ctx.fillText('👩', width * 0.85, height * 0.15);
+                ctx.fillText('👧', width * 0.15, height * 0.85);
+                ctx.fillText('👦', width * 0.85, height * 0.85);
+            } else {
+                // Simple icon with arch symbol
+                const fontSize = type === 'favicon' ? width * 0.6 : width * 0.4;
+                ctx.font = `${fontSize}px Arial`;
+                ctx.fillText('🏛️', width/2, height/2);
+                
+                // Add family icons for main app icon
+                if (type === 'icon' && width >= 512) {
+                    ctx.font = `${width * 0.08}px Arial`;
+                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                    ctx.fillText('👨', width * 0.2, height * 0.2);
+                    ctx.fillText('👩', width * 0.8, height * 0.2);
+                    ctx.fillText('👧', width * 0.2, height * 0.8);
+                    ctx.fillText('👦', width * 0.8, height * 0.8);
+                }
+            }
+            
+            // Download the image
+            canvas.toBlob(function(blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${type === 'adaptive' ? 'adaptive-' : type === 'notification' ? 'notification-' : ''}${type === 'splash' ? 'splash' : type === 'adaptive' ? 'icon' : type === 'notification' ? 'icon' : type}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+        }
+    </script>
+</body>
+</html>

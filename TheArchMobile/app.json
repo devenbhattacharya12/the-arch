@@ -1,52 +1,71 @@
 {
   "expo": {
-    "name": "TheArchMobile",
-    "slug": "TheArchMobile",
+    "name": "The Arch",
+    "slug": "the-arch-deven-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "thearchmobile",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#667eea"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.devenbhattacharya.thearch",
+      "buildNumber": "1",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#667eea"
       },
-      "edgeToEdgeEnabled": true,
+      "package": "com.devenbhattacharya.thearch",
+      "versionCode": 1,
       "permissions": [
-        "android.permission.VIBRATE"
+        "RECEIVE_BOOT_COMPLETED",
+        "WAKE_LOCK",
+        "VIBRATE"
       ]
     },
     "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ],
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
-          "color": "#667eea"
+          "icon": "./assets/notification-icon.png",
+          "color": "#667eea",
+          "defaultChannel": "default"
         }
       ]
     ],
-    "experiments": {
-      "typedRoutes": true
+    "scheme": "thearch",
+    "description": "The Arch - A beautiful family connection app that brings your loved ones closer together through daily questions, shared moments, and meaningful conversations.",
+    "privacy": "public",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "githubUrl": "https://github.com/devenbhattacharya12/the-arch",
+    "primaryColor": "#667eea",
+    "backgroundColor": "#667eea",
+    "extra": {
+      "eas": {
+        "projectId": "ea388a0c-9f65-4a3f-8c3c-e37b3e5e579a"
+      }
     }
   }
 }
