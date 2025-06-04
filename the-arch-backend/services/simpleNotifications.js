@@ -21,9 +21,39 @@ const sendSimpleNotification = async (userId, title, body, data = {}) => {
       return false;
     }
     
+    // Check notification preferences - map notification types correctly
+    const notificationType = data.type;
+    if (notificationType) {
+      // Map notification types to user settings
+      const settingsMap = {
+        'dailyQuestions': 'dailyQuestions',
+        'daily_question': 'dailyQuestions',
+        'responses': 'responses',
+        'response_shared': 'responses',
+        'posts': 'posts',
+        'new_post': 'posts',
+        'comment': 'posts',
+        'like': 'posts',
+        'getTogethers': 'getTogethers',
+        'event': 'getTogethers',
+        'messages': 'messages',
+        'message': 'messages',
+        'test': 'posts' // Map test notifications to posts setting
+      };
+      
+      const userSettingKey = settingsMap[notificationType];
+      if (userSettingKey && !user.notificationSettings[userSettingKey]) {
+        console.log(`User ${userId} has disabled ${userSettingKey} notifications`);
+        return false;
+      }
+    }
+    
     // Check that the push token is valid
     if (!Expo.isExpoPushToken(user.pushToken)) {
       console.error(`❌ Invalid push token for user ${userId}: ${user.pushToken}`);
+      // Remove invalid token
+      user.pushToken = null;
+      await user.save();
       return false;
     }
 
@@ -32,13 +62,26 @@ const sendSimpleNotification = async (userId, title, body, data = {}) => {
       sound: 'default',
       title: title,
       body: body,
-      data: data
+      data: data,
+      priority: 'high',
+      channelId: 'default'
     };
 
     console.log(`📤 Sending notification: ${title} - ${body}`);
     const ticket = await expo.sendPushNotificationsAsync([message]);
-    console.log('✅ Push notification sent:', ticket[0]);
     
+    // Handle ticket errors
+    if (ticket[0] && ticket[0].status === 'error') {
+      console.error('Push notification error:', ticket[0]);
+      // If the token is invalid, remove it
+      if (ticket[0].details && ticket[0].details.error === 'DeviceNotRegistered') {
+        user.pushToken = null;
+        await user.save();
+      }
+      return false;
+    }
+    
+    console.log('✅ Push notification sent:', ticket[0]);
     return true;
   } catch (error) {
     console.error('❌ Error sending push notification:', error);
@@ -69,7 +112,9 @@ const sendToArchMembers = async (archId, title, body, excludeUserId = null, data
       return false;
     }
 
-    let userIds = arch.members.map(member => member.user._id);
+    let userIds = arch.members
+      .filter(member => member.user && member.user.isActive)
+      .map(member => member.user._id);
     
     // Exclude specific user (e.g., don't notify the person who created the post)
     if (excludeUserId) {

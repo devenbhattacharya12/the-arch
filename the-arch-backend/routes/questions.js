@@ -29,6 +29,14 @@ router.get('/today', auth, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
+  const questionsWithStatus = questions.map(q => ({
+    ...q.toObject(),
+    status: q.responses.some(r => r.user.equals(req.userId)) ? 'answered' : 
+            q.deadline < new Date() ? 'expired' : 'pending',
+    timeLeft: Math.max(0, Math.floor((q.deadline - new Date()) / 60000)) // minutes
+  }));
+    res.json(questionsWithStatus);
+
 });
 
 // Get questions for a specific arch
@@ -73,6 +81,20 @@ router.get('/arch/:archId', auth, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// Simple one-click pass
+router.post('/:questionId/pass', auth, async (req, res) => {
+  const question = await DailyQuestion.findById(req.params.questionId);
+  question.responses.push({
+    user: req.userId,
+    response: '',
+    passed: true,
+    submittedAt: new Date()
+  });
+  await question.save();
+  res.json({ message: 'Question passed' });
+});
+
 
 // Get processed questions where user is the subject (responses about them)
 router.get('/about-me', auth, async (req, res) => {

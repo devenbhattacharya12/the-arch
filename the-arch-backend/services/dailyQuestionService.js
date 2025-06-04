@@ -35,7 +35,8 @@ const sendDailyQuestions = async (io = null) => {
     
     for (const arch of arches) {
       const activeMembers = arch.members.filter(member => 
-        member.user.isActive && 
+        member.user && member.user.isActive && 
+        member.user.notificationSettings && 
         member.user.notificationSettings.dailyQuestions
       );
       
@@ -96,37 +97,39 @@ const sendDailyQuestions = async (io = null) => {
       }
       
       // Save all questions for this arch
-      await DailyQuestion.insertMany(questionsForArch);
-      totalQuestionsSent += questionsForArch.length;
-      
-      console.log(`Sent ${questionsForArch.length} questions to arch: ${arch.name}`);
-      
-      // Send push notifications to all arch members
-      for (const member of activeMembers) {
-        const memberQuestion = questionsForArch.find(q => q.asker.equals(member.user._id));
-        if (memberQuestion) {
-          const aboutUser = activeMembers.find(m => m.user._id.equals(memberQuestion.aboutUser));
-          await sendSimpleNotification(
-            member.user._id,
-            '🌅 Good morning!',
-            `New question about ${aboutUser.user.name}`,
-            {
-              type: 'daily_question',
-              archId: arch._id.toString(),
-              questionId: memberQuestion._id.toString()
-            }
-          );
+      if (questionsForArch.length > 0) {
+        await DailyQuestion.insertMany(questionsForArch);
+        totalQuestionsSent += questionsForArch.length;
+        
+        console.log(`Sent ${questionsForArch.length} questions to arch: ${arch.name}`);
+        
+        // Send push notifications to all arch members
+        for (const member of activeMembers) {
+          const memberQuestion = questionsForArch.find(q => q.asker.equals(member.user._id));
+          if (memberQuestion) {
+            const aboutUser = activeMembers.find(m => m.user._id.equals(memberQuestion.aboutUser));
+            await sendSimpleNotification(
+              member.user._id,
+              '🌅 Good morning!',
+              `New question about ${aboutUser.user.name}`,
+              {
+                type: 'dailyQuestions',
+                archId: arch._id.toString(),
+                questionId: memberQuestion._id.toString()
+              }
+            );
+          }
         }
-      }
-      
-      // Emit real-time notification to arch members if io is available
-      if (io) {
-        io.to(arch._id.toString()).emit('daily-questions-available', {
-          archId: arch._id,
-          archName: arch.name,
-          questionCount: questionsForArch.length,
-          deadline: questionsForArch[0].deadline
-        });
+        
+        // Emit real-time notification to arch members if io is available
+        if (io) {
+          io.to(`arch-${arch._id.toString()}`).emit('daily-questions-available', {
+            archId: arch._id,
+            archName: arch.name,
+            questionCount: questionsForArch.length,
+            deadline: questionsForArch[0].deadline
+          });
+        }
       }
     }
     
@@ -164,10 +167,10 @@ const processDailyResponses = async (io = null) => {
         // Send notification to the person being asked about
         await sendSimpleNotification(
           question.aboutUser._id,
-          '💝 Someone shared about you!',
-          `${actualResponses.length} family member${actualResponses.length > 1 ? 's' : ''} shared something about you`,
+          '💝 Family shared about you!',
+          `${actualResponses.length} loving response${actualResponses.length > 1 ? 's' : ''} about you`,
           {
-            type: 'response_shared',
+            type: 'responses',
             questionId: question._id.toString(),
             archId: question.arch._id.toString()
           }
@@ -190,10 +193,10 @@ const processDailyResponses = async (io = null) => {
         
         // Emit real-time notification if io is available
         if (io) {
-          io.to(question.aboutUser._id.toString()).emit('responses-compiled', notification);
+          io.to(`user-${question.aboutUser._id.toString()}`).emit('responses-compiled', notification);
           
           // Also notify the arch about the compiled responses
-          io.to(question.arch._id.toString()).emit('arch-responses-ready', {
+          io.to(`arch-${question.arch._id.toString()}`).emit('arch-responses-ready', {
             aboutUser: question.aboutUser.name,
             question: question.question,
             responseCount: actualResponses.length
@@ -216,6 +219,65 @@ const processDailyResponses = async (io = null) => {
     
   } catch (error) {
     console.error('Error processing daily responses:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Send reminder notifications for unanswered questions
+const sendQuestionReminders = async (io = null) => {
+  try {
+    console.log('⏰ Sending question reminders...');
+    const now = new Date();
+    
+    // Find questions that expire in the next 4 hours and have no responses from their asker
+    const pendingQuestions = await DailyQuestion.find({
+      deadline: { 
+        $gt: now,
+        $lt: new Date(now.getTime() + 4 * 60 * 60 * 1000) // Next 4 hours
+      },
+      processed: false
+    }).populate('asker arch');
+    
+    let remindersSent = 0;
+    
+    for (const question of pendingQuestions) {
+      const hasUserResponse = question.responses.some(r => r.user.equals(question.asker));
+      
+      if (!hasUserResponse) {
+        // Send reminder notification
+        const minutesLeft = Math.floor((question.deadline - now) / (1000 * 60));
+        
+        await sendSimpleNotification(
+          question.asker._id,
+          '⏰ Question reminder',
+          `Don't forget to answer today's question! ${minutesLeft} minutes left.`,
+          {
+            type: 'dailyQuestions',
+            questionId: question._id.toString(),
+            archId: question.arch._id.toString()
+          }
+        );
+        
+        // Send real-time reminder if io available
+        if (io) {
+          io.to(`user-${question.asker._id}`).emit('question-reminder', {
+            questionId: question._id,
+            question: question.question,
+            archName: question.arch.name,
+            deadline: question.deadline,
+            minutesLeft
+          });
+        }
+        
+        remindersSent++;
+      }
+    }
+    
+    console.log(`Sent ${remindersSent} question reminders`);
+    return { success: true, remindersSent };
+    
+  } catch (error) {
+    console.error('Error sending question reminders:', error);
     return { success: false, error: error.message };
   }
 };
@@ -286,65 +348,6 @@ const getUserResponseStats = async (userId, archId = null, days = 30) => {
   } catch (error) {
     console.error('Error getting user response stats:', error);
     return null;
-  }
-};
-
-// Send reminder notifications for unanswered questions
-const sendQuestionReminders = async (io = null) => {
-  try {
-    console.log('⏰ Sending question reminders...');
-    const now = new Date();
-    
-    // Find questions that expire in the next 4 hours and have no responses from their asker
-    const pendingQuestions = await DailyQuestion.find({
-      deadline: { 
-        $gt: now,
-        $lt: new Date(now.getTime() + 4 * 60 * 60 * 1000) // Next 4 hours
-      },
-      processed: false
-    }).populate('asker arch');
-    
-    let remindersSent = 0;
-    
-    for (const question of pendingQuestions) {
-      const hasUserResponse = question.responses.some(r => r.user.equals(question.asker));
-      
-      if (!hasUserResponse) {
-        // Send reminder notification
-        const minutesLeft = Math.floor((question.deadline - now) / (1000 * 60));
-        
-        await sendSimpleNotification(
-          question.asker._id,
-          '⏰ Question reminder',
-          `Don't forget to answer today's question! ${minutesLeft} minutes left.`,
-          {
-            type: 'question_reminder',
-            questionId: question._id.toString(),
-            archId: question.arch._id.toString()
-          }
-        );
-        
-        // Send real-time reminder if io available
-        if (io) {
-          io.to(`user-${question.asker._id}`).emit('question-reminder', {
-            questionId: question._id,
-            question: question.question,
-            archName: question.arch.name,
-            deadline: question.deadline,
-            minutesLeft
-          });
-        }
-        
-        remindersSent++;
-      }
-    }
-    
-    console.log(`Sent ${remindersSent} question reminders`);
-    return { success: true, remindersSent };
-    
-  } catch (error) {
-    console.error('Error sending question reminders:', error);
-    return { success: false, error: error.message };
   }
 };
 

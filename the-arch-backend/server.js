@@ -16,7 +16,8 @@ const postRoutes = require('./routes/posts');
 const getTogetherRoutes = require('./routes/gettogethers');
 const messageRoutes = require('./routes/messages');
 
-const { sendDailyQuestions, processDailyResponses, sendQuestionReminders } = require('./services/dailyQuestionService');
+// Import the daily question service
+const dailyQuestionService = require('./services/dailyQuestionService');
 
 const app = express();
 const server = http.createServer(app);
@@ -129,7 +130,7 @@ if (process.env.NODE_ENV === 'development') {
   app.post('/api/admin/send-questions', async (req, res) => {
     try {
       console.log('🧪 Manual trigger: Sending daily questions...');
-      const result = await sendDailyQuestions(io);
+      const result = await dailyQuestionService.sendDailyQuestions(io);
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -139,7 +140,7 @@ if (process.env.NODE_ENV === 'development') {
   app.post('/api/admin/process-responses', async (req, res) => {
     try {
       console.log('🧪 Manual trigger: Processing daily responses...');
-      const result = await processDailyResponses(io);
+      const result = await dailyQuestionService.processDailyResponses(io);
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -149,7 +150,7 @@ if (process.env.NODE_ENV === 'development') {
   app.post('/api/admin/send-reminders', async (req, res) => {
     try {
       console.log('🧪 Manual trigger: Sending question reminders...');
-      const result = await sendQuestionReminders(io);
+      const result = await dailyQuestionService.sendQuestionReminders(io);
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -162,7 +163,7 @@ if (process.env.NODE_ENV === 'development') {
 cron.schedule('0 6 * * *', async () => {
   console.log('Cron: Sending daily questions...');
   try {
-    const result = await sendDailyQuestions(io);
+    const result = await dailyQuestionService.sendDailyQuestions(io);
     console.log('Cron result:', result);
   } catch (error) {
     console.error('Cron error sending questions:', error);
@@ -175,7 +176,7 @@ cron.schedule('0 6 * * *', async () => {
 cron.schedule('0 17 * * *', async () => {
   console.log('Cron: Processing daily responses...');
   try {
-    const result = await processDailyResponses(io);
+    const result = await dailyQuestionService.processDailyResponses(io);
     console.log('Cron result:', result);
   } catch (error) {
     console.error('Cron error processing responses:', error);
@@ -188,7 +189,7 @@ cron.schedule('0 17 * * *', async () => {
 cron.schedule('0 15 * * *', async () => {
   console.log('Cron: Sending question reminders...');
   try {
-    const result = await sendQuestionReminders(io);
+    const result = await dailyQuestionService.sendQuestionReminders(io);
     console.log('Cron reminder result:', result);
   } catch (error) {
     console.error('Cron error sending reminders:', error);

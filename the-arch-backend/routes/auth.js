@@ -42,6 +42,24 @@ router.post('/register', async (req, res) => {
     );
     
     console.log(`✅ New user registered: ${user.email}`);
+
+    router.put('/notification-settings', auth, async (req, res) => {
+  const { dailyQuestions, responses, posts, getTogethers, messages } = req.body;
+  
+  const user = await User.findById(req.userId);
+  
+  // Update only provided settings
+  Object.assign(user.notificationSettings, {
+    ...(typeof dailyQuestions === 'boolean' && { dailyQuestions }),
+    ...(typeof responses === 'boolean' && { responses }),
+    ...(typeof posts === 'boolean' && { posts }),
+    ...(typeof getTogethers === 'boolean' && { getTogethers }),
+    ...(typeof messages === 'boolean' && { messages })
+  });
+  
+  await user.save();
+  res.json({ message: 'Settings updated', settings: user.notificationSettings });
+});
     
     res.status(201).json({
       token,

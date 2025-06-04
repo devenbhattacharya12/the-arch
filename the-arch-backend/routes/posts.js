@@ -9,7 +9,6 @@ const auth = require('../middleware/auth');
 const router = express.Router();
 const { sendSimpleNotification, sendToArchMembers } = require('../services/simpleNotifications');
 
-
 // Get feed for a specific arch
 router.get('/feed/:archId', auth, async (req, res) => {
   try {
@@ -78,9 +77,17 @@ router.get('/feed/:archId', auth, async (req, res) => {
     });
     
     // Combine posts and response items, sort by date
-    const feedItems = [...posts.map(post => ({ ...post.toObject(), type: 'post' })), ...responseItems]
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, parseInt(limit));
+    const feedItems = [
+      ...posts.map(post => ({ 
+        ...post.toObject(), 
+        type: 'post',
+        userHasLiked: post.likes.some(like => like.user.equals(req.userId)),
+        engagementScore: post.likes.length + post.comments.length
+      })), 
+      ...responseItems
+    ]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, parseInt(limit));
     
     console.log(`📰 Retrieved ${feedItems.length} feed items for arch ${archId}`);
     
@@ -133,11 +140,20 @@ router.post('/', auth, async (req, res) => {
       `${author.name} shared something new`,
       req.userId,
       {
-        type: 'new_post',
+        type: 'posts', // This matches user.notificationSettings.posts
         postId: post._id.toString(),
         archId: archId
       }
     );
+    
+    // Add real-time updates
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`arch-${archId}`).emit('new-post', {
+        post: post,
+        authorName: author.name
+      });
+    }
     
     console.log(`📝 User ${req.userId} created post in arch ${archId} with notifications sent`);
     
