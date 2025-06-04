@@ -1,4 +1,3 @@
-// routes/questions.js - Daily Questions API Routes
 const express = require('express');
 const DailyQuestion = require('../models/DailyQuestion');
 const Arch = require('../models/Arch');
@@ -11,49 +10,122 @@ const router = express.Router();
 // Get today's questions for the authenticated user
 router.get('/today', auth, async (req, res) => {
   try {
-    const today = moment().startOf('day').toDate();
-    const tomorrow = moment().add(1, 'day').startOf('day').toDate();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
-    // Find all questions for today where the user is the asker
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
     const questions = await DailyQuestion.find({
       asker: req.userId,
       date: {
         $gte: today,
         $lt: tomorrow
       }
-    }).populate('aboutUser', 'name email avatar')
-      .populate('arch', 'name')
-      .populate('responses.user', 'name email avatar');
+    }).populate('aboutUser', 'name avatar')
+      .populate('arch', 'name');
     
-    console.log(`📝 Found ${questions.length} questions for user ${req.userId} today`);
     res.json(questions);
   } catch (error) {
-    console.error('Error fetching today\'s questions:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Get questions about the authenticated user (from other family members)
-router.get('/about-me', auth, async (req, res) => {
+// Get questions for a specific arch
+router.get('/arch/:archId', auth, async (req, res) => {
   try {
-    const today = moment().startOf('day').toDate();
-    const tomorrow = moment().add(1, 'day').startOf('day').toDate();
+    const { archId } = req.params;
+    const { date } = req.query;
     
-    // Find questions where this user is being asked about
-    const questions = await DailyQuestion.find({
-      aboutUser: req.userId,
-      date: {
-        $gte: today,
-        $lt: tomorrow
-      }
-    }).populate('asker', 'name email avatar')
-      .populate('arch', 'name')
-      .populate('responses.user', 'name email avatar');
+    // Verify user is member of this arch
+    const arch = await Arch.findById(archId);
+    if (!arch) {
+      return res.status(404).json({ message: 'Arch not found' });
+    }
     
-    console.log(`👤 Found ${questions.length} questions about user ${req.userId} today`);
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
+    if (!isMember) {
+      return res.status(403).json({ message: 'Not a member of this arch' });
+    }
+    
+    let query = { arch: archId };
+    
+    if (date) {
+      const queryDate = new Date(date);
+      queryDate.setHours(0, 0, 0, 0);
+      const nextDay = new Date(queryDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      
+      query.date = {
+        $gte: queryDate,
+        $lt: nextDay
+      };
+    }
+    
+    const questions = await DailyQuestion.find(query)
+      .populate('asker', 'name avatar')
+      .populate('aboutUser', 'name avatar')
+      .populate('responses.user', 'name avatar')
+      .sort({ createdAt: -1 });
+    
     res.json(questions);
   } catch (error) {
-    console.error('Error fetching questions about user:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get processed questions where user is the subject (responses about them)
+router.get('/about-me', auth, async (req, res) => {
+  try {
+    const { archId, limit = 10, skip = 0 } = req.query;
+    
+    let query = {
+      aboutUser: req.userId,
+      processed: true,
+      'responses.0': { $exists: true } // Only questions with responses
+    };
+    
+    if (archId) {
+      query.arch = archId;
+    }
+    
+    const questions = await DailyQuestion.find(query)
+      .populate('asker', 'name avatar')
+      .populate('arch', 'name')
+      .populate('responses.user', 'name avatar')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip));
+    
+    res.json(questions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get question by ID (for detailed view)
+router.get('/:questionId', auth, async (req, res) => {
+  try {
+    const question = await DailyQuestion.findById(req.params.questionId)
+      .populate('asker', 'name avatar')
+      .populate('aboutUser', 'name avatar')
+      .populate('arch', 'name')
+      .populate('responses.user', 'name avatar');
+    
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found' });
+    }
+    
+    // Verify user has access to this question
+    const arch = await Arch.findById(question.arch._id);
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
+    
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    
+    res.json(question);
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
@@ -73,15 +145,20 @@ router.post('/:questionId/respond', auth, async (req, res) => {
       return res.status(404).json({ message: 'Question not found' });
     }
     
-    // Check if user is authorized to respond (must be in the same arch)
+    // Check if deadline has passed
+    if (new Date() > question.deadline) {
+      return res.status(400).json({ message: 'Response deadline has passed' });
+    }
+    
+    // Verify user is member of the arch
     const arch = await Arch.findById(question.arch);
     const isMember = arch.members.some(member => member.user.equals(req.userId));
     
     if (!isMember) {
-      return res.status(403).json({ message: 'You are not authorized to respond to this question' });
+      return res.status(403).json({ message: 'Not a member of this arch' });
     }
     
-    // Check if user has already responded
+    // Check if user already responded
     const existingResponse = question.responses.find(r => r.user.equals(req.userId));
     if (existingResponse) {
       // Update existing response
@@ -100,17 +177,23 @@ router.post('/:questionId/respond', auth, async (req, res) => {
     
     await question.save();
     
-    console.log(`💬 User ${req.userId} responded to question ${questionId}`);
-    
     // Populate the response data for return
-    await question.populate('responses.user', 'name email avatar');
+    await question.populate('responses.user', 'name avatar');
+    
+    // Emit real-time update to arch members
+    const io = req.app.get('io');
+    if (io) {
+      io.to(question.arch.toString()).emit('question-response', {
+        questionId: question._id,
+        totalResponses: question.responses.length
+      });
+    }
     
     res.json({
       message: 'Response submitted successfully',
       question
     });
   } catch (error) {
-    console.error('Error submitting response:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -130,6 +213,11 @@ router.post('/:questionId/pass', auth, async (req, res) => {
       return res.status(403).json({ message: 'You can only pass on your own questions' });
     }
     
+    // Check if deadline has passed
+    if (new Date() > question.deadline) {
+      return res.status(400).json({ message: 'Response deadline has passed' });
+    }
+    
     // Check if user has already responded or passed
     const existingResponse = question.responses.find(r => r.user.equals(req.userId));
     if (existingResponse) {
@@ -146,18 +234,17 @@ router.post('/:questionId/pass', auth, async (req, res) => {
     
     await question.save();
     
-    console.log(`⏭️ User ${req.userId} passed on question ${questionId}`);
     res.json({ message: 'Question passed successfully' });
   } catch (error) {
-    console.error('Error passing question:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Get all questions for a specific arch (for admin/debugging)
-router.get('/arch/:archId', auth, async (req, res) => {
+// Get response statistics for an arch
+router.get('/stats/:archId', auth, async (req, res) => {
   try {
     const { archId } = req.params;
+    const { startDate, endDate } = req.query;
     
     // Verify user is member of this arch
     const arch = await Arch.findById(archId);
@@ -167,80 +254,88 @@ router.get('/arch/:archId', auth, async (req, res) => {
     
     const isMember = arch.members.some(member => member.user.equals(req.userId));
     if (!isMember) {
-      return res.status(403).json({ message: 'You are not a member of this arch' });
+      return res.status(403).json({ message: 'Not a member of this arch' });
     }
     
-    const questions = await DailyQuestion.find({ arch: archId })
-      .populate('asker', 'name email avatar')
-      .populate('aboutUser', 'name email avatar')
-      .populate('responses.user', 'name email avatar')
-      .sort({ date: -1 });
-    
-    res.json(questions);
-  } catch (error) {
-    console.error('Error fetching arch questions:', error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Get questions statistics for an arch
-router.get('/arch/:archId/stats', auth, async (req, res) => {
-  try {
-    const { archId } = req.params;
-    
-    // Verify user is member of this arch
-    const arch = await Arch.findById(archId);
-    if (!arch) {
-      return res.status(404).json({ message: 'Arch not found' });
+    let dateQuery = {};
+    if (startDate && endDate) {
+      dateQuery = {
+        date: {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        }
+      };
     }
     
-    const isMember = arch.members.some(member => member.user.equals(req.userId));
-    if (!isMember) {
-      return res.status(403).json({ message: 'You are not a member of this arch' });
-    }
-    
-    const today = moment().startOf('day').toDate();
-    
-    // Get today's questions count
-    const todayQuestions = await DailyQuestion.countDocuments({
-      arch: archId,
-      date: { $gte: today }
-    });
-    
-    // Get today's responses count
-    const todayResponses = await DailyQuestion.aggregate([
-      { $match: { arch: arch._id, date: { $gte: today } } },
-      { $unwind: '$responses' },
-      { $match: { 'responses.passed': { $ne: true } } },
-      { $count: 'total' }
+    // Get response statistics
+    const stats = await DailyQuestion.aggregate([
+      {
+        $match: {
+          arch: arch._id,
+          ...dateQuery
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalQuestions: { $sum: 1 },
+          totalResponses: { $sum: { $size: '$responses' } },
+          averageResponsesPerQuestion: { $avg: { $size: '$responses' } },
+          questionsWithResponses: {
+            $sum: {
+              $cond: [{ $gt: [{ $size: '$responses' }, 0] }, 1, 0]
+            }
+          }
+        }
+      }
     ]);
     
-    // Get completion rate for this week
-    const weekStart = moment().startOf('week').toDate();
-    const weekQuestions = await DailyQuestion.find({
-      arch: archId,
-      date: { $gte: weekStart }
-    });
-    
-    let totalExpectedResponses = 0;
-    let actualResponses = 0;
-    
-    weekQuestions.forEach(q => {
-      totalExpectedResponses += arch.members.length;
-      actualResponses += q.responses.filter(r => !r.passed).length;
-    });
-    
-    const completionRate = totalExpectedResponses > 0 ? 
-      Math.round((actualResponses / totalExpectedResponses) * 100) : 0;
+    // Get individual member response rates
+    const memberStats = await DailyQuestion.aggregate([
+      {
+        $match: {
+          arch: arch._id,
+          ...dateQuery
+        }
+      },
+      { $unwind: '$responses' },
+      {
+        $group: {
+          _id: '$responses.user',
+          totalResponses: { $sum: 1 },
+          passedCount: {
+            $sum: { $cond: ['$responses.passed', 1, 0] }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user'
+        }
+      },
+      {
+        $project: {
+          user: { $arrayElemAt: ['$user', 0] },
+          totalResponses: 1,
+          passedCount: 1,
+          actualResponses: { $subtract: ['$totalResponses', '$passedCount'] }
+        }
+      }
+    ]);
     
     res.json({
-      todayQuestions,
-      todayResponses: todayResponses[0]?.total || 0,
-      weeklyCompletionRate: completionRate,
-      archMemberCount: arch.members.length
+      overall: stats[0] || {
+        totalQuestions: 0,
+        totalResponses: 0,
+        averageResponsesPerQuestion: 0,
+        questionsWithResponses: 0
+      },
+      memberStats
     });
   } catch (error) {
-    console.error('Error fetching arch stats:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -252,7 +347,6 @@ router.post('/trigger-daily', auth, async (req, res) => {
     await sendDailyQuestions();
     res.json({ message: 'Daily questions created successfully' });
   } catch (error) {
-    console.error('Error triggering daily questions:', error);
     res.status(500).json({ message: error.message });
   }
 });
