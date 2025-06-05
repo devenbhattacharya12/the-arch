@@ -7,13 +7,13 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 
 // CRITICAL: Configure notification handler at the very top, immediately after imports
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+//Notifications.setNotificationHandler({
+  //handleNotification: async () => ({
+    //shouldShowAlert: true,
+    //shouldPlaySound: true,
+    //shouldSetBadge: false,
+  //}),
+//});
 
 // API Configuration - UPDATE THIS WITH YOUR IP ADDRESS
 const API_BASE_URL = 'http://10.0.0.51:3000/api';
@@ -207,7 +207,7 @@ export const registerForPushNotifications = async (): Promise<boolean> => {
     
     // Get push token
     const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: 'a80f5ae7-529d-43f3-a235-f11bd7b74d5f'
+      projectId: 'ea388a0c-9f65-4a3f-8c3c-e37b3e5e579a'
     });
     console.log('📱 Got push token:', tokenData.data.substring(0, 20) + '...');
     
@@ -264,6 +264,8 @@ const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     checkAuthState();
   }, []);
+
+  
 
   // Handle navigation based on auth state
   useEffect(() => {

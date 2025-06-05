@@ -228,16 +228,6 @@ export default function ArchesScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* NEW: Push Notification Setup Button */}
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: '#28a745', marginTop: 10, marginBottom: 10 }]}
-          onPress={setupPushNotifications}
-        >
-          <Text style={styles.buttonText}>
-            📱 Set Up Push Notifications
-          </Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.button, { backgroundColor: '#28a745', marginTop: 10, marginBottom: 40 }]}
           onPress={async () => {

@@ -403,5 +403,70 @@ router.get('/push-status', auth, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+// Test notification endpoint
+router.post('/test-notification', auth, async (req, res) => {
+  try {
+    const { Expo } = require('expo-server-sdk');
+    
+    // Find the current user
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    if (!user.pushToken) {
+      return res.status(400).json({ message: 'No push token found for user' });
+    }
+    
+    console.log('📱 Testing push notification for:', user.email);
+    console.log('📱 Push token:', user.pushToken);
+    
+    // Create Expo SDK client
+    const expo = new Expo();
+    
+    // Check if the token is valid
+    if (!Expo.isExpoPushToken(user.pushToken)) {
+      return res.status(400).json({ message: 'Invalid Expo push token' });
+    }
+    
+    // Create the message
+    const message = {
+      to: user.pushToken,
+      sound: 'default',
+      title: '🧪 Test Notification',
+      body: req.body.message || 'This is a test notification from The Arch! Your push notifications are working correctly.',
+      data: { type: 'test' }
+    };
+    
+    console.log('📤 Sending notification:', message.title, '-', message.body);
+    
+    // Send the notification
+    const chunks = expo.chunkPushNotifications([message]);
+    const tickets = [];
+    
+    for (const chunk of chunks) {
+      try {
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
+        console.log('✅ Push notification sent:', ticketChunk);
+      } catch (error) {
+        console.error('❌ Push notification error:', error);
+        return res.status(500).json({ 
+          message: 'Failed to send notification', 
+          error: error.message 
+        });
+      }
+    }
+    
+    res.json({ 
+      message: 'Test notification sent successfully',
+      tickets: tickets
+    });
+    
+  } catch (error) {
+    console.error('❌ Test notification error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
 
 module.exports = router;

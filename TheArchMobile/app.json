@@ -2,6 +2,7 @@
   "expo": {
     "name": "The Arch",
     "slug": "the-arch-deven-mobile",
+    "owner": "devenbhattacharya",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,12 +17,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.devenbhattacharya.thearch",
+      "bundleIdentifier": "com.devenbhattacharya.the-arch-deven-mobile",
       "buildNumber": "1",
       "infoPlist": {
         "UIBackgroundModes": [
+          "remote-notification",
           "remote-notification"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
