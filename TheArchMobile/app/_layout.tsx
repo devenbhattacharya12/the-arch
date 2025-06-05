@@ -118,6 +118,13 @@ export class ApiService {
     });
   }
 
+  // Share a question response to the family feed
+static async shareQuestionResponseToFeed(questionId: string, responseId: string) {
+  return this.request(`/questions/${questionId}/responses/${responseId}/share`, {
+    method: 'POST',
+  });
+}
+
   // Questions methods
   static async getTodaysQuestions() {
     return this.request('/questions/today');

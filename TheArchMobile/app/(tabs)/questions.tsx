@@ -133,18 +133,21 @@ export default function QuestionsScreen() {
     );
   };
 
-  const shareResponseToFeed = async (responseId: string) => {
-    try {
-      console.log('📢 Sharing response to feed:', responseId);
-      await ApiService.shareResponseToFeed(responseId);
-      Alert.alert('Success', 'Response shared to family feed!');
-      // Reload questions to show updated share status
-      await loadQuestions();
-    } catch (error: any) {
-      console.error('❌ Error sharing response:', error);
-      Alert.alert('Error', 'Failed to share response: ' + error.message);
-    }
-  };
+  const shareResponseToFeed = async (questionId: string, responseId: string) => {
+  try {
+    console.log('📢 Sharing response to feed:', { questionId, responseId });
+    
+    // Use the correct API method for question responses
+    await ApiService.shareQuestionResponseToFeed(questionId, responseId);
+    
+    Alert.alert('Success', 'Response shared to family feed!');
+    // Reload questions to show updated share status
+    await loadQuestions();
+  } catch (error: any) {
+    console.error('❌ Error sharing response:', error);
+    Alert.alert('Error', 'Failed to share response: ' + error.message);
+  }
+};
 
   const formatDeadline = (deadline: string) => {
     const deadlineDate = new Date(deadline);
@@ -218,7 +221,7 @@ export default function QuestionsScreen() {
                         ) : (
                           <TouchableOpacity
                             style={styles.shareButton}
-                            onPress={() => shareResponseToFeed(response._id)}
+                            onPress={() => shareResponseToFeed(question._id, response._id)}
                           >
                             <Ionicons name="share-outline" size={16} color="#667eea" />
                             <Text style={styles.shareButtonText}>Share with Family</Text>

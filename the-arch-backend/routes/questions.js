@@ -82,9 +82,6 @@ router.get('/arch/:archId', auth, async (req, res) => {
   }
 });
 
-
-
-
 // Get processed questions where user is the subject (responses about them)
 router.get('/about-me', auth, async (req, res) => {
   try {
@@ -205,6 +202,154 @@ router.post('/:questionId/respond', auth, async (req, res) => {
       question
     });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// NEW: Submit a response to a question (alternative endpoint for mobile app compatibility)
+router.post('/:questionId/responses', auth, async (req, res) => {
+  try {
+    const { questionId } = req.params;
+    const { response, sharedWithArch = false } = req.body;
+    
+    if (!response || response.trim().length === 0) {
+      return res.status(400).json({ message: 'Response cannot be empty' });
+    }
+    
+    const question = await DailyQuestion.findById(questionId);
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found' });
+    }
+    
+    // Check if user is the asker
+    if (!question.asker.equals(req.userId)) {
+      return res.status(403).json({ message: 'Not authorized to respond to this question' });
+    }
+    
+    // Check if deadline has passed
+    if (new Date() > question.deadline) {
+      return res.status(400).json({ message: 'Response deadline has passed' });
+    }
+    
+    // Check if user already responded
+    const existingResponse = question.responses.find(r => r.user.equals(req.userId));
+    if (existingResponse) {
+      return res.status(400).json({ message: 'You have already responded to this question' });
+    }
+    
+    // Add new response
+    question.responses.push({
+      user: req.userId,
+      response: response.trim(),
+      sharedWithArch,
+      submittedAt: new Date()
+    });
+    
+    await question.save();
+    
+    // Populate the response data for return
+    await question.populate([
+      { path: 'aboutUser', select: 'name email' },
+      { path: 'arch', select: 'name' },
+      { path: 'responses.user', select: 'name' }
+    ]);
+    
+    res.json(question);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// NEW: Share a response to the family feed
+router.post('/:questionId/responses/:responseId/share', auth, async (req, res) => {
+  try {
+    const { questionId, responseId } = req.params;
+    
+    const question = await DailyQuestion.findById(questionId);
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found' });
+    }
+
+    // Find the specific response
+    const response = question.responses.id(responseId);
+    if (!response) {
+      return res.status(404).json({ message: 'Response not found' });
+    }
+
+    // ONLY allow the person the question is about to share responses
+    // This means if someone wrote something nice about you, only YOU can share it
+    if (!question.aboutUser.equals(req.userId)) {
+      return res.status(403).json({ message: 'Only the person this response is about can share it to the family feed' });
+    }
+
+    // Update the share status
+    response.sharedWithArch = true;
+    await question.save();
+
+    // Populate the question for return
+    await question.populate([
+      { path: 'aboutUser', select: 'name email' },
+      { path: 'arch', select: 'name' },
+      { path: 'responses.user', select: 'name' }
+    ]);
+
+    res.json({ 
+      success: true, 
+      message: 'Response shared to family feed',
+      question: question
+    });
+  } catch (error) {
+    console.error('Error sharing response to feed:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// NEW: Update a response (for changing share status or other properties)
+router.patch('/:questionId/responses/:responseId', auth, async (req, res) => {
+  try {
+    const { questionId, responseId } = req.params;
+    const updates = req.body;
+    
+    const question = await DailyQuestion.findById(questionId);
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found' });
+    }
+
+    // Find the specific response
+    const response = question.responses.id(responseId);
+    if (!response) {
+      return res.status(404).json({ message: 'Response not found' });
+    }
+
+    // ONLY allow the person the question is about to update share status
+    // This means if someone wrote something nice about you, only YOU can share it
+    if (!question.aboutUser.equals(req.userId)) {
+      return res.status(403).json({ message: 'Only the person this response is about can update it' });
+    }
+
+    // Apply updates
+    Object.keys(updates).forEach(key => {
+      if (key in response) {
+        response[key] = updates[key];
+      }
+    });
+
+    await question.save();
+
+    // Populate the question for return
+    await question.populate([
+      { path: 'aboutUser', select: 'name email' },
+      { path: 'arch', select: 'name' },
+      { path: 'responses.user', select: 'name' }
+    ]);
+
+    res.json({ 
+      success: true, 
+      message: 'Response updated successfully',
+      question: question
+    });
+  } catch (error) {
+    console.error('Error updating response:', error);
     res.status(500).json({ message: error.message });
   }
 });
