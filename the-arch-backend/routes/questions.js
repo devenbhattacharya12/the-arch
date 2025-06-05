@@ -303,6 +303,79 @@ router.post('/:questionId/responses/:responseId/share', auth, async (req, res) =
     res.status(500).json({ message: error.message });
   }
 });
+// NEW: Share a response to the family feed
+router.post('/:questionId/responses/:responseId/share', auth, async (req, res) => {
+  try {
+    const { questionId, responseId } = req.params;
+    
+    const question = await DailyQuestion.findById(questionId)
+      .populate('aboutUser', 'name email')
+      .populate('arch', 'name')
+      .populate('responses.user', 'name');
+    
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found' });
+    }
+
+    // Find the specific response
+    const response = question.responses.id(responseId);
+    if (!response) {
+      return res.status(404).json({ message: 'Response not found' });
+    }
+
+    // ONLY allow the person the question is about to share responses
+    if (!question.aboutUser.equals(req.userId)) {
+      return res.status(403).json({ message: 'Only the person this response is about can share it to the family feed' });
+    }
+
+    // Check if already shared
+    if (response.sharedWithArch) {
+      return res.status(400).json({ message: 'Response already shared to family feed' });
+    }
+
+    // Update the share status
+    response.sharedWithArch = true;
+    await question.save();
+
+    // CREATE A FEED POST from this response
+    const Post = require('../models/Post');
+    
+    const feedPost = new Post({
+      arch: question.arch._id,
+      author: req.userId, // The person sharing it (aboutUser)
+      content: `💝 Family Appreciation\n\n"${response.response}"\n\n- Shared by ${question.aboutUser.name}\n- Originally written by ${response.user.name}`,
+      type: 'question-response',
+      metadata: {
+        questionId: question._id,
+        responseId: response._id,
+        originalQuestion: question.question,
+        responseAuthor: response.user._id,
+        aboutUser: question.aboutUser._id
+      },
+      isActive: true
+    });
+
+    await feedPost.save();
+
+    // Populate the created post for return
+    await feedPost.populate([
+      { path: 'author', select: 'name avatar' },
+      { path: 'arch', select: 'name' }
+    ]);
+
+    console.log('✅ Created feed post from shared response:', feedPost._id);
+
+    res.json({ 
+      success: true, 
+      message: 'Response shared to family feed',
+      question: question,
+      feedPost: feedPost
+    });
+  } catch (error) {
+    console.error('Error sharing response to feed:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
 
 // NEW: Update a response (for changing share status or other properties)
 router.patch('/:questionId/responses/:responseId', auth, async (req, res) => {

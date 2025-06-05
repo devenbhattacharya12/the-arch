@@ -16,6 +16,31 @@ const postSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+
+  // ADD THIS: Post type to distinguish question responses from regular posts
+  type: {
+    type: String,
+    enum: ['post', 'question-response'],
+    default: 'post'
+  },
+  // ADD THIS: Metadata for question responses
+  metadata: {
+    questionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'DailyQuestion'
+    },
+    responseId: String,
+    originalQuestion: String,
+    responseAuthor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    aboutUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+  
   media: [{
     type: {
       type: String,
