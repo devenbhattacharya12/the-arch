@@ -1,0 +1,4 @@
+<key>NSCameraUsageDescription</key>
+<string>This app needs access to camera to take photos for sharing with family</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app needs access to photo library to share photos with family</string>

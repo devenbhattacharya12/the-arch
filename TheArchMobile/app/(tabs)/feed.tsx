@@ -12,9 +12,11 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ApiService, useAuth } from '../_layout';
+import PostComposer from '../../components/PostComposer';
 
 interface FeedItem {
   _id: string;
@@ -68,8 +70,6 @@ export default function FeedScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreatePost, setShowCreatePost] = useState(false);
-  const [newPostContent, setNewPostContent] = useState('');
-  const [submittingPost, setSubmittingPost] = useState(false);
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
   const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
 
@@ -118,21 +118,11 @@ export default function FeedScreen() {
     loadFeed();
   };
 
-  const createPost = async () => {
-    if (!newPostContent.trim() || !selectedArch) return;
-    
-    setSubmittingPost(true);
-    try {
-      await ApiService.createPost(selectedArch._id, newPostContent.trim());
-      setNewPostContent('');
-      setShowCreatePost(false);
-      await loadFeed();
-      Alert.alert('Success', 'Your post has been shared with the family!');
-    } catch (error: any) {
-      Alert.alert('Error', 'Failed to create post: ' + error.message);
-    } finally {
-      setSubmittingPost(false);
-    }
+  const handlePostCreated = (newPost: any) => {
+    // Add the new post to the top of the feed
+    setFeedItems(prev => [newPost, ...prev]);
+    setShowCreatePost(false);
+    Alert.alert('Success', 'Your post has been shared with the family!');
   };
 
   const toggleLike = async (postId: string) => {
@@ -171,6 +161,29 @@ export default function FeedScreen() {
 
   const getUserLiked = (item: FeedItem) => {
     return item.likes.some(like => like.user._id === user?.id);
+  };
+
+  const renderMediaGrid = (media: Array<{type: string, url: string, thumbnail?: string}>) => {
+    if (!media || media.length === 0) return null;
+
+    return (
+      <View style={styles.mediaGrid}>
+        {media.map((item, index) => (
+          <TouchableOpacity key={index} style={[
+            styles.mediaItem,
+            media.length === 1 && styles.singleMedia,
+            media.length === 2 && styles.doubleMedia,
+            media.length > 2 && styles.multipleMedia
+          ]}>
+            <Image 
+              source={{ uri: item.thumbnail || item.url }} 
+              style={styles.mediaImage}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
   };
 
   const renderFeedItem = (item: FeedItem) => {
@@ -215,7 +228,12 @@ export default function FeedScreen() {
               </Text>
             </View>
           ) : (
-            <Text style={styles.postContent}>{item.content}</Text>
+            <>
+              {item.content && (
+                <Text style={styles.postContent}>{item.content}</Text>
+              )}
+              {renderMediaGrid(item.media || [])}
+            </>
           )}
         </View>
 
@@ -383,42 +401,17 @@ export default function FeedScreen() {
         )}
       </ScrollView>
 
-      {/* Create Post Modal */}
+      {/* Create Post Modal - Now uses PostComposer */}
       <Modal
         visible={showCreatePost}
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowCreatePost(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Share with Family</Text>
-            <TouchableOpacity
-              onPress={createPost}
-              disabled={!newPostContent.trim() || submittingPost}
-            >
-              <Text style={[
-                styles.modalPost,
-                (!newPostContent.trim() || submittingPost) && styles.modalPostDisabled
-              ]}>
-                {submittingPost ? 'Posting...' : 'Post'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.modalContent}>
-            <TextInput
-              style={styles.postInput}
-              placeholder="What's happening with the family?"
-              value={newPostContent}
-              onChangeText={setNewPostContent}
-              multiline
-              autoFocus
-            />
-          </View>
-        </SafeAreaView>
+        <PostComposer
+          archId={selectedArch?._id || ''}
+          onPostCreated={handlePostCreated}
+          onCancel={() => setShowCreatePost(false)}
+        />
       </Modal>
     </SafeAreaView>
   );
@@ -551,6 +544,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     color: '#333',
+    marginBottom: 10,
+  },
+  mediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 10,
+  },
+  mediaItem: {
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  singleMedia: {
+    width: '100%',
+    height: 300,
+  },
+  doubleMedia: {
+    width: '49%',
+    height: 200,
+  },
+  multipleMedia: {
+    width: '32%',
+    height: 120,
+  },
+  mediaImage: {
+    width: '100%',
+    height: '100%',
   },
   responseContent: {
     gap: 10,
@@ -688,45 +708,5 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: '#6c757d',
     fontSize: 16,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e1e5e9',
-  },
-  modalCancel: {
-    fontSize: 16,
-    color: '#6c757d',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  modalPost: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#667eea',
-  },
-  modalPostDisabled: {
-    opacity: 0.5,
-  },
-  modalContent: {
-    flex: 1,
-    padding: 20,
-  },
-  postInput: {
-    fontSize: 16,
-    lineHeight: 22,
-    textAlignVertical: 'top',
-    flex: 1,
   },
 });

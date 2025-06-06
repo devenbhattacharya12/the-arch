@@ -1,5 +1,7 @@
 // routes/posts.js - Family Feed API Routes
 const express = require('express');
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
 const Post = require('../models/Post');
 const Arch = require('../models/Arch');
 const User = require('../models/User');
@@ -8,6 +10,29 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 const { sendSimpleNotification, sendToArchMembers } = require('../services/simpleNotifications');
+ 
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
 
 // Get feed for a specific arch
 router.get('/feed/:archId', auth, async (req, res) => {
@@ -103,63 +128,122 @@ router.get('/feed/:archId', auth, async (req, res) => {
 });
 
 // Create a new post
-router.post('/', auth, async (req, res) => {
+router.post('/', auth, upload.array('images', 5), async (req, res) => {
   try {
-    const { archId, content, media = [] } = req.body;
-    
-    if (!archId || !content || content.trim().length === 0) {
-      return res.status(400).json({ message: 'Arch ID and content are required' });
-    }
-    
-    // Verify user is member of this arch
+    const { archId, content } = req.body;
+    const userId = req.userId;
+
+    // Verify user is member of the arch
     const arch = await Arch.findById(archId);
     if (!arch) {
       return res.status(404).json({ message: 'Arch not found' });
     }
-    
-    const isMember = arch.members.some(member => member.user.equals(req.userId));
+
+    const isMember = arch.members.some(member => member.user.equals(userId));
     if (!isMember) {
-      return res.status(403).json({ message: 'You are not a member of this arch' });
+      return res.status(403).json({ message: 'Not a member of this arch' });
     }
-    
+
+    // Upload images to Cloudinary if any
+    const mediaItems = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const result = await new Promise((resolve, reject) => {
+            cloudinary.uploader.upload_stream(
+              {
+                resource_type: 'image',
+                folder: 'the-arch/posts',
+                transformation: [
+                  { width: 1200, height: 1200, crop: 'limit' },
+                  { quality: 'auto:good' }
+                ]
+              },
+              (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+              }
+            ).end(file.buffer);
+          });
+
+          // Generate thumbnail
+          const thumbnailUrl = cloudinary.url(result.public_id, {
+            width: 300,
+            height: 300,
+            crop: 'fill',
+            quality: 'auto:low'
+          });
+
+          mediaItems.push({
+            type: 'image',
+            url: result.secure_url,
+            thumbnail: thumbnailUrl
+          });
+        } catch (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          // Continue with other images if one fails
+        }
+      }
+    }
+
+    // Create the post
     const post = new Post({
       arch: archId,
-      author: req.userId,
-      content: content.trim(),
-      media: media
+      author: userId,
+      content,
+      media: mediaItems
     });
-    
+
     await post.save();
     await post.populate('author', 'name email avatar');
-    
-    // Send push notifications to all arch members except the author
-    const author = await User.findById(req.userId);
-    await sendToArchMembers(
-      archId,
-      '📱 New family post',
-      `${author.name} shared something new`,
-      req.userId,
-      {
-        type: 'posts', // This matches user.notificationSettings.posts
-        postId: post._id.toString(),
-        archId: archId
-      }
-    );
-    
-    // Add real-time updates
+
+    // Send real-time notification to arch members
     const io = req.app.get('io');
     if (io) {
-      io.to(`arch-${archId}`).emit('new-post', {
+      io.to(archId).emit('new-post', {
         post: post,
-        authorName: author.name
+        archId: archId
       });
     }
-    
-    console.log(`📝 User ${req.userId} created post in arch ${archId} with notifications sent`);
-    
+
     res.status(201).json(post);
   } catch (error) {
     console.error('Error creating post:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get posts for an arch
+router.get('/arch/:archId', auth, async (req, res) => {
+  try {
+    const { archId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Verify user is member of the arch
+    const arch = await Arch.findById(archId);
+    if (!arch) {
+      return res.status(404).json({ message: 'Arch not found' });
+    }
+
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
+    if (!isMember) {
+      return res.status(403).json({ message: 'Not a member of this arch' });
+    }
+
+    const posts = await Post.find({ 
+      arch: archId, 
+      isActive: true 
+    })
+    .populate('author', 'name email avatar')
+    .populate('likes.user', 'name')
+    .populate('comments.user', 'name avatar')
+    .sort({ createdAt: -1 })
+    .limit(limit * 1)
+    .skip((page - 1) * limit);
+
+    res.json(posts);
+  } catch (error) {
+    console.error('Error fetching posts:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -168,118 +252,112 @@ router.post('/', auth, async (req, res) => {
 router.post('/:postId/like', auth, async (req, res) => {
   try {
     const { postId } = req.params;
-    
+    const userId = req.userId;
+
     const post = await Post.findById(postId);
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
-    
-    // Verify user is member of the arch
-    const arch = await Arch.findById(post.arch);
-    const isMember = arch.members.some(member => member.user.equals(req.userId));
-    if (!isMember) {
-      return res.status(403).json({ message: 'You are not a member of this arch' });
-    }
-    
-    // Check if user already liked this post
-    const existingLike = post.likes.find(like => like.user.equals(req.userId));
-    
+
+    // Check if user already liked the post
+    const existingLike = post.likes.find(like => like.user.equals(userId));
+
     if (existingLike) {
-      // Unlike: remove the like
-      post.likes = post.likes.filter(like => !like.user.equals(req.userId));
-      await post.save();
-      console.log(`👎 User ${req.userId} unliked post ${postId}`);
-      res.json({ message: 'Post unliked', liked: false, likesCount: post.likes.length });
+      // Unlike the post
+      post.likes = post.likes.filter(like => !like.user.equals(userId));
     } else {
-      // Like: add the like
-      post.likes.push({ user: req.userId, likedAt: new Date() });
-      await post.save();
-      console.log(`👍 User ${req.userId} liked post ${postId}`);
-      res.json({ message: 'Post liked', liked: true, likesCount: post.likes.length });
+      // Like the post
+      post.likes.push({ user: userId });
     }
+
+    await post.save();
+    await post.populate('likes.user', 'name');
+
+    // Send real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(post.arch.toString()).emit('post-liked', {
+        postId: postId,
+        likes: post.likes,
+        likedBy: userId
+      });
+    }
+
+    res.json({ likes: post.likes });
   } catch (error) {
-    console.error('Error toggling like:', error);
+    console.error('Error liking post:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Add a comment to a post
+// Add comment to post
 router.post('/:postId/comment', auth, async (req, res) => {
   try {
     const { postId } = req.params;
     const { content } = req.body;
-    
+    const userId = req.userId;
+
     if (!content || content.trim().length === 0) {
       return res.status(400).json({ message: 'Comment content is required' });
     }
-    
+
     const post = await Post.findById(postId);
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
-    
-    // Verify user is member of the arch
-    const arch = await Arch.findById(post.arch);
-    const isMember = arch.members.some(member => member.user.equals(req.userId));
-    if (!isMember) {
-      return res.status(403).json({ message: 'You are not a member of this arch' });
-    }
-    
-    const comment = {
-      user: req.userId,
-      content: content.trim(),
-      createdAt: new Date()
-    };
-    
-    post.comments.push(comment);
-    await post.save();
-    
-    // Populate the new comment's user info
-    await post.populate('comments.user', 'name email avatar');
-    
-    const newComment = post.comments[post.comments.length - 1];
-    
-    console.log(`💬 User ${req.userId} commented on post ${postId}`);
-    
-    res.status(201).json({
-      message: 'Comment added successfully',
-      comment: newComment,
-      commentsCount: post.comments.length
+
+    post.comments.push({
+      user: userId,
+      content: content.trim()
     });
+
+    await post.save();
+    await post.populate('comments.user', 'name avatar');
+
+    // Send real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(post.arch.toString()).emit('new-comment', {
+        postId: postId,
+        comment: post.comments[post.comments.length - 1]
+      });
+    }
+
+    res.json({ comments: post.comments });
   } catch (error) {
     console.error('Error adding comment:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Delete a post (only by author or arch admin)
+// Delete a post (author only)
 router.delete('/:postId', auth, async (req, res) => {
   try {
     const { postId } = req.params;
-    
+    const userId = req.userId;
+
     const post = await Post.findById(postId);
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
-    
-    // Check if user is the author
-    const isAuthor = post.author.equals(req.userId);
-    
-    // Check if user is arch admin
-    const arch = await Arch.findById(post.arch);
-    const userMember = arch.members.find(member => member.user.equals(req.userId));
-    const isAdmin = userMember && userMember.role === 'admin';
-    
-    if (!isAuthor && !isAdmin) {
-      return res.status(403).json({ message: 'You can only delete your own posts or admin can delete any post' });
+
+    // Only author can delete
+    if (!post.author.equals(userId)) {
+      return res.status(403).json({ message: 'Not authorized to delete this post' });
     }
-    
+
     // Soft delete
     post.isActive = false;
     await post.save();
-    
-    console.log(`🗑️ Post ${postId} deleted by user ${req.userId}`);
-    
+
+    // Send real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(post.arch.toString()).emit('post-deleted', {
+        postId: postId
+      });
+    }
+
     res.json({ message: 'Post deleted successfully' });
   } catch (error) {
     console.error('Error deleting post:', error);
