@@ -1,135 +1,79 @@
-// routes/gettogethers.js - Complete Get-Together Routes
 const express = require('express');
 const GetTogether = require('../models/GetTogether');
 const Arch = require('../models/Arch');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
-const { sendToArchMembers } = require('../services/simpleNotifications');
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
 
 const router = express.Router();
 
-// Get all get-togethers for user's arches
-router.get('/', auth, async (req, res) => {
-  try {
-    const { archId, status, upcoming } = req.query;
-    
-    // Get user's arches
-    const user = await User.findById(req.userId).populate('arches');
-    const archIds = archId ? [archId] : user.arches.map(arch => arch._id);
-    
-    let query = {
-      arch: { $in: archIds }
-    };
-    
-    if (status) {
-      query.status = status;
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
     }
-    
-    if (upcoming === 'true') {
-      query.scheduledFor = { $gte: new Date() };
-    }
-    
-    const getTogethers = await GetTogether.find(query)
-      .populate('creator', 'name email avatar')
-      .populate('arch', 'name')
-      .populate('invitees.user', 'name email avatar')
-      .populate('timeline.user', 'name avatar')
-      .sort({ scheduledFor: 1 });
-    
-    res.json(getTogethers);
-  } catch (error) {
-    console.error('Error fetching get-togethers:', error);
-    res.status(500).json({ message: error.message });
-  }
+  },
 });
 
-// Get specific get-together by ID
-router.get('/:id', auth, async (req, res) => {
+// Create a new get-together
+router.post('/', auth, upload.single('image'), async (req, res) => {
   try {
-    const getTogether = await GetTogether.findById(req.params.id)
-      .populate('creator', 'name email avatar')
-      .populate('arch', 'name members')
-      .populate('invitees.user', 'name email avatar')
-      .populate('timeline.user', 'name avatar');
-    
-    if (!getTogether) {
-      return res.status(404).json({ message: 'Get-together not found' });
-    }
-    
-    // Verify user is member of the arch
-    const arch = await Arch.findById(getTogether.arch._id);
-    const isMember = arch.members.some(member => member.user.equals(req.userId));
-    
-    if (!isMember) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-    
-    res.json(getTogether);
-  } catch (error) {
-    console.error('Error fetching get-together:', error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Create new get-together
-router.post('/', auth, async (req, res) => {
-  try {
-    const {
-      archId,
-      title,
-      description,
-      type,
-      scheduledFor,
-      location,
-      virtualLink,
-      inviteAllMembers = true,
-      specificInvitees = []
-    } = req.body;
+    const { archId, title, description, type, scheduledFor, location, virtualLink } = req.body;
     
     if (!archId || !title || !type || !scheduledFor) {
       return res.status(400).json({ 
-        message: 'Arch ID, title, type, and scheduled time are required' 
+        message: 'Arch ID, title, type, and scheduled date/time are required' 
       });
     }
-    
+
     // Verify user is member of this arch
-    const arch = await Arch.findById(archId).populate('members.user');
+    const arch = await Arch.findById(archId);
     if (!arch) {
       return res.status(404).json({ message: 'Arch not found' });
     }
-    
+
     const isMember = arch.members.some(member => member.user.equals(req.userId));
     if (!isMember) {
-      return res.status(403).json({ message: 'You are not a member of this arch' });
+      return res.status(403).json({ message: 'Not a member of this arch' });
     }
-    
-    // Validate type-specific requirements
-    if (type === 'in-person' && !location) {
-      return res.status(400).json({ message: 'Location is required for in-person events' });
+
+    // Handle image upload if present
+    let imageUrl = null;
+    if (req.file) {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          cloudinary.uploader.upload_stream(
+            {
+              resource_type: 'image',
+              transformation: [
+                { width: 800, height: 600, crop: 'limit' },
+                { quality: 'auto', fetch_format: 'auto' }
+              ],
+              folder: 'arch-gettogethers'
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          ).end(req.file.buffer);
+        });
+        imageUrl = result.secure_url;
+      } catch (uploadError) {
+        console.error('Image upload failed:', uploadError);
+        // Continue without image rather than failing
+      }
     }
-    
-    if (type === 'virtual' && !virtualLink) {
-      return res.status(400).json({ message: 'Virtual link is required for virtual events' });
-    }
-    
-    // Create invitee list
-    let invitees = [];
-    if (inviteAllMembers) {
-      // Invite all arch members except creator
-      invitees = arch.members
-        .filter(member => !member.user._id.equals(req.userId))
-        .map(member => ({
-          user: member.user._id,
-          status: 'pending'
-        }));
-    } else {
-      // Invite specific users
-      invitees = specificInvitees.map(userId => ({
-        user: userId,
-        status: 'pending'
-      }));
-    }
-    
+
+    // Create the get-together
     const getTogether = new GetTogether({
       arch: archId,
       creator: req.userId,
@@ -137,42 +81,33 @@ router.post('/', auth, async (req, res) => {
       description,
       type,
       scheduledFor: new Date(scheduledFor),
-      location,
-      virtualLink,
-      invitees,
-      status: 'planning'
+      location: type === 'in-person' ? location : null,
+      virtualLink: type === 'virtual' ? virtualLink : null,
+      image: imageUrl,
+      invitees: arch.members.map(member => ({
+        user: member.user,
+        status: member.user.equals(req.userId) ? 'accepted' : 'pending'
+      }))
     });
-    
+
     await getTogether.save();
-    await getTogether.populate('creator arch invitees.user');
-    
-    // Send notifications to invitees
-    const inviteeIds = invitees.map(inv => inv.user);
-    const creator = await User.findById(req.userId);
-    
-    await sendToArchMembers(
-      archId,
-      '🎉 New event invitation',
-      `${creator.name} invited you to "${title}"`,
-      req.userId,
-      {
-        type: 'event_invitation',
-        eventId: getTogether._id.toString(),
-        archId: archId
-      }
-    );
-    
-    // Emit real-time notification
+
+    // Populate the data for response
+    await getTogether.populate([
+      { path: 'creator', select: 'name avatar' },
+      { path: 'arch', select: 'name' },
+      { path: 'invitees.user', select: 'name avatar' }
+    ]);
+
+    // Send real-time notifications to arch members
     const io = req.app.get('io');
     if (io) {
-      io.to(archId).emit('new-event', {
-        event: getTogether,
-        creatorName: creator.name
+      io.to(archId).emit('new-gettogether', {
+        getTogether,
+        message: `${getTogether.creator.name} created a new event: ${title}`
       });
     }
-    
-    console.log(`🎉 User ${req.userId} created event "${title}" in arch ${archId}`);
-    
+
     res.status(201).json(getTogether);
   } catch (error) {
     console.error('Error creating get-together:', error);
@@ -180,258 +115,353 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// Update get-together
-router.put('/:id', auth, async (req, res) => {
+// Get get-togethers for an arch (with optional date filtering)
+router.get('/arch/:archId', auth, async (req, res) => {
   try {
-    const getTogether = await GetTogether.findById(req.params.id);
-    
+    const { archId } = req.params;
+    const { month, year, startDate, endDate } = req.query;
+
+    // Verify user is member of this arch
+    const arch = await Arch.findById(archId);
+    if (!arch) {
+      return res.status(404).json({ message: 'Arch not found' });
+    }
+
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
+    if (!isMember) {
+      return res.status(403).json({ message: 'Not a member of this arch' });
+    }
+
+    // Build date filter
+    let dateFilter = {};
+    if (month && year) {
+      // Get events for specific month/year
+      const startOfMonth = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+      dateFilter = {
+        scheduledFor: {
+          $gte: startOfMonth,
+          $lte: endOfMonth
+        }
+      };
+    } else if (startDate && endDate) {
+      // Get events for date range
+      dateFilter = {
+        scheduledFor: {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        }
+      };
+    }
+
+    const getTogethers = await GetTogether.find({
+      arch: archId,
+      ...dateFilter
+    })
+    .populate('creator', 'name avatar')
+    .populate('arch', 'name')
+    .populate('invitees.user', 'name avatar')
+    .sort({ scheduledFor: 1 });
+
+    res.json(getTogethers);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get a specific get-together by ID
+router.get('/:getTogetherId', auth, async (req, res) => {
+  try {
+    const getTogether = await GetTogether.findById(req.params.getTogetherId)
+      .populate('creator', 'name avatar')
+      .populate('arch', 'name')
+      .populate('invitees.user', 'name avatar')
+      .populate('timeline.user', 'name avatar');
+
     if (!getTogether) {
       return res.status(404).json({ message: 'Get-together not found' });
     }
+
+    // Verify user is member of this arch
+    const arch = await Arch.findById(getTogether.arch._id);
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
     
-    // Only creator can update
-    if (!getTogether.creator.equals(req.userId)) {
-      return res.status(403).json({ message: 'Only the creator can update this event' });
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied' });
     }
-    
-    const {
-      title,
-      description,
-      type,
-      scheduledFor,
-      location,
-      virtualLink,
-      status
-    } = req.body;
-    
-    // Update fields
-    if (title) getTogether.title = title;
-    if (description !== undefined) getTogether.description = description;
-    if (type) getTogether.type = type;
-    if (scheduledFor) getTogether.scheduledFor = new Date(scheduledFor);
-    if (location !== undefined) getTogether.location = location;
-    if (virtualLink !== undefined) getTogether.virtualLink = virtualLink;
-    if (status) getTogether.status = status;
-    
-    await getTogether.save();
-    await getTogether.populate('creator arch invitees.user');
-    
-    // Notify attendees of changes
-    const creator = await User.findById(req.userId);
-    await sendToArchMembers(
-      getTogether.arch._id,
-      '📅 Event updated',
-      `${creator.name} updated the event "${getTogether.title}"`,
-      req.userId,
-      {
-        type: 'event_updated',
-        eventId: getTogether._id.toString(),
-        archId: getTogether.arch._id.toString()
-      }
-    );
-    
-    console.log(`📅 Event ${req.params.id} updated by user ${req.userId}`);
-    
+
     res.json(getTogether);
   } catch (error) {
-    console.error('Error updating get-together:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Delete get-together
-router.delete('/:id', auth, async (req, res) => {
+// RSVP to a get-together
+router.post('/:getTogetherId/rsvp', auth, async (req, res) => {
   try {
-    const getTogether = await GetTogether.findById(req.params.id);
-    
+    const { getTogetherId } = req.params;
+    const { status } = req.body; // 'accepted', 'declined', 'pending'
+
+    if (!['accepted', 'declined', 'pending'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid RSVP status' });
+    }
+
+    const getTogether = await GetTogether.findById(getTogetherId);
     if (!getTogether) {
       return res.status(404).json({ message: 'Get-together not found' });
     }
-    
-    // Only creator or arch admin can delete
-    const arch = await Arch.findById(getTogether.arch);
-    const userMember = arch.members.find(member => member.user.equals(req.userId));
-    const isCreator = getTogether.creator.equals(req.userId);
-    const isArchAdmin = userMember && userMember.role === 'admin';
-    
-    if (!isCreator && !isArchAdmin) {
-      return res.status(403).json({ 
-        message: 'Only the creator or arch admin can delete this event' 
+
+    // Find user's invitee record
+    const invitee = getTogether.invitees.find(inv => inv.user.equals(req.userId));
+    if (!invitee) {
+      return res.status(403).json({ message: 'You are not invited to this event' });
+    }
+
+    // Update RSVP status
+    invitee.status = status;
+    invitee.respondedAt = new Date();
+
+    await getTogether.save();
+
+    // Populate for response
+    await getTogether.populate([
+      { path: 'creator', select: 'name avatar' },
+      { path: 'invitees.user', select: 'name avatar' }
+    ]);
+
+    // Send real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(getTogether.arch.toString()).emit('gettogether-rsvp', {
+        getTogetherId,
+        userId: req.userId,
+        status,
+        user: invitee.user
       });
     }
-    
-    await GetTogether.findByIdAndDelete(req.params.id);
-    
-    // Notify attendees
-    const user = await User.findById(req.userId);
-    await sendToArchMembers(
-      getTogether.arch,
-      '❌ Event cancelled',
-      `${user.name} cancelled the event "${getTogether.title}"`,
-      req.userId,
-      {
-        type: 'event_cancelled',
-        eventTitle: getTogether.title,
-        archId: getTogether.arch.toString()
-      }
-    );
-    
-    console.log(`❌ Event ${req.params.id} deleted by user ${req.userId}`);
-    
-    res.json({ message: 'Get-together deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting get-together:', error);
-    res.status(500).json({ message: error.message });
-  }
-});
 
-// RSVP to get-together
-router.post('/:id/rsvp', auth, async (req, res) => {
-  try {
-    const { status } = req.body; // 'accepted' or 'declined'
-    
-    if (!['accepted', 'declined'].includes(status)) {
-      return res.status(400).json({ message: 'Status must be "accepted" or "declined"' });
-    }
-    
-    const getTogether = await GetTogether.findById(req.params.id)
-      .populate('creator', 'name');
-    
-    if (!getTogether) {
-      return res.status(404).json({ message: 'Get-together not found' });
-    }
-    
-    // Find user's invitation
-    const inviteeIndex = getTogether.invitees.findIndex(
-      inv => inv.user.equals(req.userId)
-    );
-    
-    if (inviteeIndex === -1) {
-      return res.status(400).json({ message: 'You are not invited to this event' });
-    }
-    
-    // Update RSVP status
-    getTogether.invitees[inviteeIndex].status = status;
-    getTogether.invitees[inviteeIndex].respondedAt = new Date();
-    
-    await getTogether.save();
-    
-    // Notify creator
-    const user = await User.findById(req.userId);
-    const statusText = status === 'accepted' ? 'accepted' : 'declined';
-    
-    await sendToArchMembers(
-      getTogether.arch,
-      `🎉 RSVP Update`,
-      `${user.name} ${statusText} your event "${getTogether.title}"`,
-      req.userId,
-      {
-        type: 'event_rsvp',
-        eventId: getTogether._id.toString(),
-        status: status,
-        archId: getTogether.arch.toString()
-      }
-    );
-    
-    console.log(`📋 User ${req.userId} ${statusText} event ${req.params.id}`);
-    
-    res.json({ 
-      message: `RSVP updated to ${status}`,
-      rsvpStatus: status 
+    res.json({
+      message: 'RSVP updated successfully',
+      getTogether
     });
   } catch (error) {
-    console.error('Error updating RSVP:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Add timeline entry (during or after event)
-router.post('/:id/timeline', auth, async (req, res) => {
+// Add timeline entry (note/photo/video during event)
+router.post('/:getTogetherId/timeline', auth, upload.array('media', 5), async (req, res) => {
   try {
-    const { type, content, media = [] } = req.body;
-    
-    if (!type || !content) {
-      return res.status(400).json({ message: 'Type and content are required' });
-    }
-    
-    if (!['note', 'photo', 'video'].includes(type)) {
-      return res.status(400).json({ message: 'Type must be note, photo, or video' });
-    }
-    
-    const getTogether = await GetTogether.findById(req.params.id);
-    
+    const { getTogetherId } = req.params;
+    const { type, content } = req.body; // type: 'note', 'photo', 'video'
+
+    const getTogether = await GetTogether.findById(getTogetherId);
     if (!getTogether) {
       return res.status(404).json({ message: 'Get-together not found' });
     }
+
+    // Verify user is member of this arch
+    const arch = await Arch.findById(getTogether.arch);
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
     
-    // Verify user is invited or creator
-    const isCreator = getTogether.creator.equals(req.userId);
-    const isInvited = getTogether.invitees.some(inv => 
-      inv.user.equals(req.userId) && inv.status === 'accepted'
-    );
-    
-    if (!isCreator && !isInvited) {
-      return res.status(403).json({ 
-        message: 'Only attendees can add to the timeline' 
-      });
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied' });
     }
-    
+
+    // Handle media uploads if present
+    let mediaUrls = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const result = await new Promise((resolve, reject) => {
+            cloudinary.uploader.upload_stream(
+              {
+                resource_type: 'auto',
+                transformation: [
+                  { width: 1200, height: 1200, crop: 'limit' },
+                  { quality: 'auto', fetch_format: 'auto' }
+                ],
+                folder: 'arch-timeline'
+              },
+              (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+              }
+            ).end(file.buffer);
+          });
+          
+          mediaUrls.push({
+            url: result.secure_url,
+            thumbnail: result.secure_url // Cloudinary can generate thumbnails
+          });
+        } catch (uploadError) {
+          console.error('Media upload failed:', uploadError);
+        }
+      }
+    }
+
+    // Add timeline entry
     const timelineEntry = {
       user: req.userId,
       type,
       content,
-      media,
+      media: mediaUrls,
       timestamp: new Date()
     };
-    
+
     getTogether.timeline.push(timelineEntry);
     await getTogether.save();
-    
+
+    // Populate for response
     await getTogether.populate('timeline.user', 'name avatar');
-    
-    // Get the newly added entry
-    const newEntry = getTogether.timeline[getTogether.timeline.length - 1];
-    
-    console.log(`📸 User ${req.userId} added timeline entry to event ${req.params.id}`);
-    
+
+    // Send real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(getTogether.arch.toString()).emit('gettogether-timeline', {
+        getTogetherId,
+        timelineEntry: getTogether.timeline[getTogether.timeline.length - 1]
+      });
+    }
+
     res.status(201).json({
       message: 'Timeline entry added successfully',
-      entry: newEntry
+      timelineEntry: getTogether.timeline[getTogether.timeline.length - 1]
     });
   } catch (error) {
-    console.error('Error adding timeline entry:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
-// Get event statistics (for creator)
-router.get('/:id/stats', auth, async (req, res) => {
+// Update get-together (creator only)
+router.put('/:getTogetherId', auth, upload.single('image'), async (req, res) => {
   try {
-    const getTogether = await GetTogether.findById(req.params.id)
-      .populate('invitees.user', 'name email');
-    
+    const getTogether = await GetTogether.findById(req.params.getTogetherId);
     if (!getTogether) {
       return res.status(404).json({ message: 'Get-together not found' });
     }
-    
-    // Only creator can view detailed stats
+
+    // Only creator can update
     if (!getTogether.creator.equals(req.userId)) {
-      return res.status(403).json({ message: 'Only the creator can view event statistics' });
+      return res.status(403).json({ message: 'Only the creator can update this event' });
     }
-    
-    const stats = {
-      totalInvited: getTogether.invitees.length,
-      accepted: getTogether.invitees.filter(inv => inv.status === 'accepted').length,
-      declined: getTogether.invitees.filter(inv => inv.status === 'declined').length,
-      pending: getTogether.invitees.filter(inv => inv.status === 'pending').length,
-      timelineEntries: getTogether.timeline.length,
-      rsvpRate: getTogether.invitees.length > 0 ? 
-        Math.round((getTogether.invitees.filter(inv => inv.status !== 'pending').length / getTogether.invitees.length) * 100) : 0
-    };
-    
-    res.json(stats);
+
+    const { title, description, type, scheduledFor, location, virtualLink, status } = req.body;
+
+    // Handle image upload if present
+    if (req.file) {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          cloudinary.uploader.upload_stream(
+            {
+              resource_type: 'image',
+              transformation: [
+                { width: 800, height: 600, crop: 'limit' },
+                { quality: 'auto', fetch_format: 'auto' }
+              ],
+              folder: 'arch-gettogethers'
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          ).end(req.file.buffer);
+        });
+        getTogether.image = result.secure_url;
+      } catch (uploadError) {
+        console.error('Image upload failed:', uploadError);
+      }
+    }
+
+    // Update fields
+    if (title !== undefined) getTogether.title = title;
+    if (description !== undefined) getTogether.description = description;
+    if (type !== undefined) getTogether.type = type;
+    if (scheduledFor !== undefined) getTogether.scheduledFor = new Date(scheduledFor);
+    if (location !== undefined) getTogether.location = location;
+    if (virtualLink !== undefined) getTogether.virtualLink = virtualLink;
+    if (status !== undefined) getTogether.status = status;
+
+    await getTogether.save();
+
+    // Populate for response
+    await getTogether.populate([
+      { path: 'creator', select: 'name avatar' },
+      { path: 'arch', select: 'name' },
+      { path: 'invitees.user', select: 'name avatar' }
+    ]);
+
+    // Send real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(getTogether.arch._id.toString()).emit('gettogether-updated', {
+        getTogether
+      });
+    }
+
+    res.json(getTogether);
   } catch (error) {
-    console.error('Error fetching event stats:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete get-together (creator only)
+router.delete('/:getTogetherId', auth, async (req, res) => {
+  try {
+    const getTogether = await GetTogether.findById(req.params.getTogetherId);
+    if (!getTogether) {
+      return res.status(404).json({ message: 'Get-together not found' });
+    }
+
+    // Only creator can delete
+    if (!getTogether.creator.equals(req.userId)) {
+      return res.status(403).json({ message: 'Only the creator can delete this event' });
+    }
+
+    await GetTogether.findByIdAndDelete(req.params.getTogetherId);
+
+    // Send real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(getTogether.arch.toString()).emit('gettogether-deleted', {
+        getTogetherId: req.params.getTogetherId
+      });
+    }
+
+    res.json({ message: 'Get-together deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get RSVP summary for a get-together
+router.get('/:getTogetherId/rsvp-summary', auth, async (req, res) => {
+  try {
+    const getTogether = await GetTogether.findById(req.params.getTogetherId)
+      .populate('invitees.user', 'name avatar');
+
+    if (!getTogether) {
+      return res.status(404).json({ message: 'Get-together not found' });
+    }
+
+    // Verify access
+    const arch = await Arch.findById(getTogether.arch);
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
+    
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Group RSVPs by status
+    const rsvpSummary = {
+      accepted: getTogether.invitees.filter(inv => inv.status === 'accepted'),
+      declined: getTogether.invitees.filter(inv => inv.status === 'declined'),
+      pending: getTogether.invitees.filter(inv => inv.status === 'pending'),
+      total: getTogether.invitees.length
+    };
+
+    res.json(rsvpSummary);
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });

@@ -22,9 +22,13 @@ const getTogetherSchema = new mongoose.Schema({
     enum: ['in-person', 'virtual'],
     required: true
   },
-  scheduledFor: Date,
+  scheduledFor: {
+    type: Date,
+    required: true
+  },
   location: String,
   virtualLink: String,
+  image: String, // URL to event image
   invitees: [{
     user: {
       type: mongoose.Schema.Types.ObjectId,

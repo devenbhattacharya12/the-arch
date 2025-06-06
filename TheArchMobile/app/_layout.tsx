@@ -58,6 +58,59 @@ export class ApiService {
       throw error;
     }
   }
+// Add these methods to your existing ApiService class in _layout.tsx
+
+// Get-togethers methods
+static async getUserArches() {
+  return this.request('/arches');
+}
+
+static async getGetTogethers(archId: string, month?: number, year?: number) {
+  let endpoint = `/gettogethers/arch/${archId}`;
+  if (month && year) {
+    endpoint += `?month=${month}&year=${year}`;
+  }
+  return this.request(endpoint);
+}
+
+static async createGetTogether(formData: FormData) {
+  const token = await AsyncStorage.getItem('token');
+  
+  // For FormData, we need to use fetch directly since we can't set Content-Type
+  const response = await fetch(`${API_BASE_URL}/gettogethers`, {
+    method: 'POST',
+    headers: {
+      ...(token && { Authorization: `Bearer ${token}` }),
+      // Don't set Content-Type for FormData - let browser handle it
+    },
+    body: formData,
+  });
+  
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to create get-together');
+  }
+  return data;
+}
+
+static async rsvpToGetTogether(getTogetherId: string, status: 'accepted' | 'declined' | 'pending') {
+  return this.request(`/gettogethers/${getTogetherId}/rsvp`, {
+    method: 'POST',
+    body: JSON.stringify({ status }),
+  });
+}
+
+static async getGetTogether(getTogetherId: string) {
+  return this.request(`/gettogethers/${getTogetherId}`);
+}
+
+static async getHeaders() {
+  const token = await AsyncStorage.getItem('token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { Authorization: `Bearer ${token}` }),
+  };
+}
 
   // Push notification methods
   static async updatePushToken(token: string) {
