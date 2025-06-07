@@ -89,7 +89,7 @@ router.get('/about-me', auth, async (req, res) => {
     
     let query = {
       aboutUser: req.userId,
-      processed: true,
+     // processed: true,
       'responses.0': { $exists: true } // Only questions with responses
     };
     

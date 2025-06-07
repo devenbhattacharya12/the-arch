@@ -45,7 +45,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="events"
+        name="gettogethers"
         options={{
           title: 'Events',
           tabBarIcon: ({ color, focused }) => (

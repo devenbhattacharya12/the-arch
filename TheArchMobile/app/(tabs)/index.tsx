@@ -228,7 +228,7 @@ export default function ArchesScreen() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={[styles.button, { backgroundColor: '#28a745', marginTop: 10, marginBottom: 40 }]}
           onPress={async () => {
             try {
@@ -244,7 +244,7 @@ export default function ArchesScreen() {
           <Text style={styles.buttonText}>
             🧪 Test Push Notification
           </Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </ScrollView>
     </SafeAreaView>
   );

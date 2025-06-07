@@ -266,34 +266,74 @@ router.post('/:responseId/share', auth, async (req, res) => {
   try {
     const { responseId } = req.params;
     
+    console.log('🔍 Share request received:', {
+      responseId,
+      userId: req.userId
+    });
+    
     // Find the question containing this response
     const question = await DailyQuestion.findOne({
       'responses._id': responseId
+    }).populate('aboutUser', 'name email')
+      .populate('responses.user', 'name');
+    
+    console.log('📋 Question found:', {
+      questionId: question?._id,
+      aboutUser: question?.aboutUser?.name,
+      aboutUserId: question?.aboutUser?._id,
+      responsesCount: question?.responses?.length
     });
     
     if (!question) {
+      console.log('❌ Question not found');
       return res.status(404).json({ message: 'Response not found' });
     }
     
     const response = question.responses.id(responseId);
+    console.log('💬 Response found:', {
+      responseExists: !!response,
+      responseUser: response?.user?.name,
+      responseUserId: response?.user?._id,
+      responseText: response?.response
+    });
+    
     if (!response) {
+      console.log('❌ Response not found in question');
       return res.status(404).json({ message: 'Response not found' });
     }
     
-    // Check if user owns this response
-    if (!response.user.equals(req.userId)) {
-      return res.status(403).json({ message: 'You can only share your own responses' });
+    console.log('🔐 Authorization check:', {
+      aboutUserId: question.aboutUser._id.toString(),
+      currentUserId: req.userId.toString(),
+      isAuthorized: question.aboutUser._id.equals(req.userId)
+    });
+    
+    // Check if user is the person the question is ABOUT
+    if (!question.aboutUser._id.equals(req.userId)) {
+      console.log('❌ Authorization failed');
+      return res.status(403).json({ message: 'Only the person this response is about can share it to the family feed' });
     }
+    
+    // Check if already shared
+    if (response.sharedWithArch) {
+      console.log('⚠️ Already shared');
+      return res.status(400).json({ message: 'Response already shared to family feed' });
+    }
+    
+    console.log('✅ Updating share status...');
     
     // Update the share status
     response.sharedWithArch = true;
     await question.save();
     
+    console.log('✅ Share status updated successfully');
+    
     res.json({ 
-      message: 'Response shared with arch successfully',
+      message: 'Response shared to family feed successfully',
       response: response
     });
   } catch (error) {
+    console.error('❌ Share error:', error);
     res.status(500).json({ message: error.message });
   }
 });

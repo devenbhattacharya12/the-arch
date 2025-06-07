@@ -231,11 +231,7 @@ static async shareQuestionResponseToFeed(questionId: string, responseId: string)
     });
   }
 
-  static async shareResponseToFeed(responseId: string) {
-    return this.request(`/posts/share-response/${responseId}`, {
-      method: 'POST',
-    });
-  }
+  
 }
 
 // Push notification registration function

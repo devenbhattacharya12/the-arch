@@ -1,4 +1,4 @@
-// app/(tabs)/questions.tsx - Daily Questions Screen with Feed Sharing
+// app/(tabs)/questions.tsx - Updated to show ALL responses
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -13,7 +13,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ApiService } from '../_layout';
+import { ApiService, useAuth } from '../_layout';
 
 interface DailyQuestion {
   _id: string;
@@ -51,6 +51,8 @@ export default function QuestionsScreen() {
   const [submitting, setSubmitting] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState<'answer' | 'about-me'>('answer');
 
+  const { user } = useAuth();
+
   useEffect(() => {
     loadQuestions();
   }, []);
@@ -62,6 +64,11 @@ export default function QuestionsScreen() {
         ApiService.getTodaysQuestions(),
         ApiService.getQuestionsAboutMe(),
       ]);
+      
+      // DEBUG LOGGING
+      console.log('🔍 Today questions:', JSON.stringify(todayData, null, 2));
+      console.log('🔍 About me questions:', JSON.stringify(aboutMeData, null, 2));
+      console.log('🔍 Current user ID:', user?.id);
       
       setTodayQuestions(todayData);
       setAboutMeQuestions(aboutMeData);
@@ -134,20 +141,18 @@ export default function QuestionsScreen() {
   };
 
   const shareResponseToFeed = async (questionId: string, responseId: string) => {
-  try {
-    console.log('📢 Sharing response to feed:', { questionId, responseId });
-    
-    // Use the correct API method for question responses
-    await ApiService.shareQuestionResponseToFeed(questionId, responseId);
-    
-    Alert.alert('Success', 'Response shared to family feed!');
-    // Reload questions to show updated share status
-    await loadQuestions();
-  } catch (error: any) {
-    console.error('❌ Error sharing response:', error);
-    Alert.alert('Error', 'Failed to share response: ' + error.message);
-  }
-};
+    try {
+      console.log('📢 Sharing response to feed:', { questionId, responseId });
+      
+      await ApiService.shareQuestionResponseToFeed(questionId, responseId);
+      
+      Alert.alert('Success', 'Response shared to family feed!');
+      await loadQuestions();
+    } catch (error: any) {
+      console.error('❌ Error sharing response:', error);
+      Alert.alert('Error', 'Failed to share response: ' + error.message);
+    }
+  };
 
   const formatDeadline = (deadline: string) => {
     const deadlineDate = new Date(deadline);
@@ -163,15 +168,29 @@ export default function QuestionsScreen() {
     }
   };
 
-  const hasUserResponded = (question: DailyQuestion, userId?: string) => {
-    // For now, we'll assume current user has responded if there's any response
-    // You might want to pass the current user ID to check properly
-    return question.responses.length > 0;
+  // UPDATED: Check if current user has responded to this specific question
+  const hasCurrentUserResponded = (question: DailyQuestion) => {
+    if (!user?.id) return false;
+    return question.responses.some(r => r.user._id === user.id);
+  };
+
+  // NEW: Get current user's response to this question
+  const getCurrentUserResponse = (question: DailyQuestion) => {
+    if (!user?.id) return null;
+    return question.responses.find(r => r.user._id === user.id);
+  };
+
+  // NEW: Get all responses except current user's
+  const getOtherResponses = (question: DailyQuestion) => {
+    if (!user?.id) return question.responses;
+    return question.responses.filter(r => r.user._id !== user.id && !r.passed && r.response);
   };
 
   const renderQuestion = (question: DailyQuestion, isAboutMe: boolean = false) => {
-    const userResponded = hasUserResponded(question);
+    const userResponded = hasCurrentUserResponded(question);
     const isPastDeadline = new Date(question.deadline) < new Date();
+    const userResponse = getCurrentUserResponse(question);
+    const otherResponses = getOtherResponses(question);
     
     return (
       <View key={question._id} style={styles.questionCard}>
@@ -202,7 +221,9 @@ export default function QuestionsScreen() {
             <Text style={styles.aboutMeLabel}>
               Family members are sharing what they appreciate about you ❤️
             </Text>
-            {question.responses.length > 0 && question.processed ? (
+            
+            {/* Show all responses about this user */}
+            {question.responses.length > 0 ? (
               <View style={styles.responsesSection}>
                 {question.responses
                   .filter(r => !r.passed && r.response)
@@ -211,40 +232,50 @@ export default function QuestionsScreen() {
                       <Text style={styles.responseText}>"{response.response}"</Text>
                       <Text style={styles.responseAuthor}>- {response.user.name}</Text>
                       
-                      {/* Share to Feed Button */}
-                      <View style={styles.responseActions}>
-                        {response.sharedWithArch ? (
-                          <View style={styles.sharedIndicator}>
-                            <Ionicons name="checkmark-circle" size={16} color="#28a745" />
-                            <Text style={styles.sharedText}>Shared to family feed</Text>
-                          </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={styles.shareButton}
-                            onPress={() => shareResponseToFeed(question._id, response._id)}
-                          >
-                            <Ionicons name="share-outline" size={16} color="#667eea" />
-                            <Text style={styles.shareButtonText}>Share with Family</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
+                      {/* Share to Feed Button - only show for current user */}
+                      {user?.id === (typeof question.aboutUser === 'string' ? question.aboutUser : question.aboutUser._id) && (
+                        <View style={styles.responseActions}>
+                          {response.sharedWithArch ? (
+                            <View style={styles.sharedIndicator}>
+                              <Ionicons name="checkmark-circle" size={16} color="#28a745" />
+                              <Text style={styles.sharedText}>Shared to family feed</Text>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              style={styles.shareButton}
+                              onPress={() => shareResponseToFeed(question._id, response._id)}
+                            >
+                              <Ionicons name="share-outline" size={16} color="#667eea" />
+                              <Text style={styles.shareButtonText}>Share with Family</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
                     </View>
                   ))}
               </View>
             ) : (
               <Text style={styles.waitingText}>
-                {question.processed 
-                  ? 'No responses shared yet' 
-                  : 'Responses will be shared after 5 PM ET'}
+                No responses yet. Family members will share their thoughts throughout the day.
               </Text>
             )}
           </View>
         ) : (
-          <>
-            {userResponded ? (
-              <View style={styles.completedSection}>
-                <Ionicons name="checkmark-circle" size={20} color="#28a745" />
-                <Text style={styles.completedText}>Response submitted!</Text>
+          <View>
+            {/* Current User's Response Status */}
+            {userResponse ? (
+              <View style={styles.userResponseSection}>
+                {userResponse.passed ? (
+                  <View style={styles.passedSection}>
+                    <Ionicons name="arrow-forward-circle" size={20} color="#ffc107" />
+                    <Text style={styles.passedText}>You passed on this question</Text>
+                  </View>
+                ) : (
+                  <View style={styles.completedSection}>
+                    <Ionicons name="checkmark-circle" size={20} color="#28a745" />
+                    <Text style={styles.completedText}>Your response: "{userResponse.response}"</Text>
+                  </View>
+                )}
               </View>
             ) : isPastDeadline ? (
               <View style={styles.expiredSection}>
@@ -252,6 +283,7 @@ export default function QuestionsScreen() {
                 <Text style={styles.expiredText}>Question expired</Text>
               </View>
             ) : (
+              /* Response Input for Current User */
               <View style={styles.responseSection}>
                 <TextInput
                   style={styles.responseInput}
@@ -283,7 +315,22 @@ export default function QuestionsScreen() {
                 </TouchableOpacity>
               </View>
             )}
-          </>
+
+            {/* Show Other Family Members' Responses */}
+            {otherResponses.length > 0 && (
+              <View style={styles.otherResponsesSection}>
+                <Text style={styles.otherResponsesTitle}>
+                  What others said about {question.aboutUser.name}:
+                </Text>
+                {otherResponses.map((response, index) => (
+                  <View key={index} style={styles.otherResponseItem}>
+                    <Text style={styles.otherResponseText}>"{response.response}"</Text>
+                    <Text style={styles.otherResponseAuthor}>- {response.user.name}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
         )}
       </View>
     );
@@ -489,8 +536,12 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 20,
   },
+  userResponseSection: {
+    marginBottom: 15,
+  },
   responseSection: {
     gap: 15,
+    marginBottom: 15,
   },
   responseInput: {
     borderWidth: 1,
@@ -520,7 +571,7 @@ const styles = StyleSheet.create({
   },
   completedSection: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 15,
     backgroundColor: '#d4edda',
     borderRadius: 10,
@@ -528,6 +579,21 @@ const styles = StyleSheet.create({
   },
   completedText: {
     color: '#155724',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    lineHeight: 20,
+  },
+  passedSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: '#fff3cd',
+    borderRadius: 10,
+    gap: 10,
+  },
+  passedText: {
+    color: '#856404',
     fontSize: 16,
     fontWeight: '500',
   },
@@ -542,6 +608,38 @@ const styles = StyleSheet.create({
   expiredText: {
     color: '#721c24',
     fontSize: 16,
+    fontWeight: '500',
+  },
+  otherResponsesSection: {
+    marginTop: 15,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
+  },
+  otherResponsesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#667eea',
+    marginBottom: 10,
+  },
+  otherResponseItem: {
+    padding: 12,
+    backgroundColor: '#f0f4ff',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#667eea',
+  },
+  otherResponseText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#333',
+    marginBottom: 4,
+    fontStyle: 'italic',
+  },
+  otherResponseAuthor: {
+    fontSize: 12,
+    color: '#6c757d',
     fontWeight: '500',
   },
   aboutMeSection: {
