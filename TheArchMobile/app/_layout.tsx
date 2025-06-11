@@ -172,8 +172,8 @@ static async getHeaders() {
   }
 
   // Share a question response to the family feed
-static async shareQuestionResponseToFeed(questionId: string, responseId: string) {
-  return this.request(`/questions/${questionId}/responses/${responseId}/share`, {
+static async shareQuestionResponseToFeed(responseId: string) {
+  return this.request(`/responses/${responseId}/share`, {
     method: 'POST',
   });
 }

@@ -320,18 +320,79 @@ router.post('/:responseId/share', auth, async (req, res) => {
       return res.status(400).json({ message: 'Response already shared to family feed' });
     }
     
-    console.log('✅ Updating share status...');
+    console.log('✅ Creating feed post...');
     
-    // Update the share status
+    // CREATE A FEED POST from this response
+    const Post = require('../models/Post');
+    
+    const feedPost = new Post({
+      arch: question.arch._id,
+      author: req.userId, // The person sharing it (aboutUser)
+      content: `💝 Family Appreciation\n\n"${response.response}"\n\n- Shared by ${question.aboutUser.name}\n- Originally written by ${response.user.name}`,
+      type: 'question-response',
+      metadata: {
+        questionId: question._id,
+        responseId: response._id,
+        originalQuestion: question.question,
+        responseAuthor: response.user._id,
+        aboutUser: question.aboutUser._id
+      },
+      isActive: true
+    });
+
+    console.log('📝 About to save feed post:', {
+      archId: feedPost.arch,
+      authorId: feedPost.author,
+      content: feedPost.content.substring(0, 50) + '...',
+      type: feedPost.type
+    });
+
+    // Save the post
+    await feedPost.save();
+    console.log('✅ Feed post saved with ID:', feedPost._id);
+
+    // Mark response as shared in the DailyQuestion
     response.sharedWithArch = true;
     await question.save();
-    
-    console.log('✅ Share status updated successfully');
+    console.log('✅ Marked response as shared in DailyQuestion');
+
+    // Verify the post exists in database
+    const verifyPost = await Post.findById(feedPost._id);
+    console.log('🔍 Post verification - found in DB:', !!verifyPost);
+
+    // Populate the created post for return
+    await feedPost.populate([
+      { path: 'author', select: 'name avatar' },
+      { path: 'arch', select: 'name' }
+    ]);
+
+    console.log('✅ Created and populated feed post:', feedPost._id);
+
+    // Send real-time notifications
+    const io = req.app.get('io');
+    if (io) {
+      const archIdString = question.arch._id.toString();
+      console.log('📡 Emitting to arch:', archIdString);
+      
+      // Emit shared response event
+      io.to(archIdString).emit('new-shared-response', {
+        post: feedPost,
+        message: `${question.aboutUser.name} shared a family appreciation!`
+      });
+      
+      // Also emit as new post for the feed
+      io.to(archIdString).emit('new-post', {
+        post: feedPost,
+        archId: question.arch._id
+      });
+    }
     
     res.json({ 
       message: 'Response shared to family feed successfully',
-      response: response
+      response: response,
+      feedPost: feedPost
     });
+
   } catch (error) {
     console.error('❌ Share error:', error);
     res.status(500).json({ message: error.message });

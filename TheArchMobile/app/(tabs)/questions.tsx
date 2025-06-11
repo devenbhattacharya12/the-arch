@@ -140,19 +140,21 @@ export default function QuestionsScreen() {
     );
   };
 
-  const shareResponseToFeed = async (questionId: string, responseId: string) => {
-    try {
-      console.log('📢 Sharing response to feed:', { questionId, responseId });
-      
-      await ApiService.shareQuestionResponseToFeed(questionId, responseId);
-      
-      Alert.alert('Success', 'Response shared to family feed!');
-      await loadQuestions();
-    } catch (error: any) {
-      console.error('❌ Error sharing response:', error);
-      Alert.alert('Error', 'Failed to share response: ' + error.message);
-    }
-  };
+  const shareResponseToFeed = async (responseId: string) => {
+  try {
+    console.log('📢 SHARE: Starting share process', { responseId });
+    console.log('📢 SHARE: Current user ID:', user?.id);
+    console.log('📢 SHARE: About to call API...');      
+    await ApiService.shareQuestionResponseToFeed(responseId);
+    
+    console.log('📢 SHARE: API call successful');
+    Alert.alert('Success', 'Response shared to family feed!');
+    await loadQuestions();
+  } catch (error: any) {
+    console.error('❌ SHARE ERROR:', error);
+    Alert.alert('Error', 'Failed to share response: ' + error.message);
+  }
+};
 
   const formatDeadline = (deadline: string) => {
     const deadlineDate = new Date(deadline);
@@ -243,7 +245,7 @@ export default function QuestionsScreen() {
                           ) : (
                             <TouchableOpacity
                               style={styles.shareButton}
-                              onPress={() => shareResponseToFeed(question._id, response._id)}
+                              onPress={() => shareResponseToFeed(response._id)}
                             >
                               <Ionicons name="share-outline" size={16} color="#667eea" />
                               <Text style={styles.shareButtonText}>Share with Family</Text>
@@ -422,6 +424,7 @@ export default function QuestionsScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+  
 }
 
 const styles = StyleSheet.create({
@@ -741,3 +744,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+

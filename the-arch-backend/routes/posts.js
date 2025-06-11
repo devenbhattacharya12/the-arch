@@ -58,12 +58,15 @@ router.get('/feed/:archId', auth, async (req, res) => {
       arch: archId, 
       isActive: true 
     })
-    .populate('author', 'name email avatar')
+      .populate('author', 'name email avatar')
     .populate('likes.user', 'name email avatar')
     .populate('comments.user', 'name email avatar')
+    .populate('metadata.responseAuthor', 'name email avatar') // For shared responses
+    .populate('metadata.aboutUser', 'name email avatar') // For shared responses
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(parseInt(limit));
+    
     
     // Get shared daily question responses for today
     const today = new Date();
