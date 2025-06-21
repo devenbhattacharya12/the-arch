@@ -16,9 +16,9 @@ import * as Device from 'expo-device';
 //});
 
 // API Configuration - UPDATE THIS WITH YOUR IP ADDRESS
-const API_BASE_URL = 'http://10.0.0.51:3000/api';
+const API_BASE_URL = 'http://192.168.1.69:3000/api';
 
-// API Service Class
+// API Service Class - Fixed Get-Togethers Methods
 export class ApiService {
   static async request(endpoint: string, options: any = {}) {
     const token = await AsyncStorage.getItem('token');
@@ -26,7 +26,8 @@ export class ApiService {
     console.log('🔍 API Request:', {
       endpoint: `${API_BASE_URL}${endpoint}`,
       hasToken: !!token,
-      method: options.method || 'GET'
+      method: options.method || 'GET',
+      hasBody: !!options.body
     });
 
     const config = {
@@ -39,17 +40,40 @@ export class ApiService {
 
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-      const data = await response.json();
+      
+      // Log response details for debugging
+      console.log('📡 Response Status:', response.status);
+      console.log('📡 Response OK:', response.ok);
+      
+      // Handle different response types
+      let data;
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.log('⚠️ Non-JSON response:', text);
+        data = { message: text };
+      }
       
       if (!response.ok) {
-        console.log('❌ API Error:', data);
-        throw new Error(data.message || 'Something went wrong');
+        console.log('❌ API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          data
+        });
+        throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`);
       }
       
       console.log('✅ API Success:', endpoint);
       return data;
     } catch (error: any) {
-      console.log('🚨 Network Error:', error.message);
+      console.log('🚨 Network Error:', {
+        message: error.message,
+        endpoint,
+        method: options.method || 'GET'
+      });
       
       if (error.message.includes('Network request failed')) {
         throw new Error('Cannot connect to server. Check your WiFi connection and backend.');
@@ -58,59 +82,300 @@ export class ApiService {
       throw error;
     }
   }
-// Add these methods to your existing ApiService class in _layout.tsx
 
-// Get-togethers methods
-static async getUserArches() {
-  return this.request('/arches');
-}
+  // ==================== GET-TOGETHERS METHODS ====================
 
-static async getGetTogethers(archId: string, month?: number, year?: number) {
-  let endpoint = `/gettogethers/arch/${archId}`;
-  if (month && year) {
-    endpoint += `?month=${month}&year=${year}`;
+  // Get user's arches (for dropdown/selection)
+  static async getUserArches() {
+    console.log('🏛️ Getting user arches...');
+    return this.request('/arches');
   }
-  return this.request(endpoint);
-}
 
-static async createGetTogether(formData: FormData) {
-  const token = await AsyncStorage.getItem('token');
-  
-  // For FormData, we need to use fetch directly since we can't set Content-Type
-  const response = await fetch(`${API_BASE_URL}/gettogethers`, {
-    method: 'POST',
-    headers: {
+  // Get get-togethers for a specific arch
+  static async getGetTogethers(archId: string, month?: number, year?: number) {
+    console.log('🎯 Getting get-togethers for arch:', archId);
+    
+    let endpoint = `/gettogethers/arch/${archId}`;
+    if (month && year) {
+      endpoint += `?month=${month}&year=${year}`;
+      console.log('📅 With date filter:', { month, year });
+    }
+    
+    return this.request(endpoint);
+  }
+
+  // Create a new get-together (with proper FormData handling)
+  static async createGetTogether(getTogetherData: {
+    archId: string;
+    title: string;
+    description?: string;
+    type: 'in-person' | 'virtual';
+    scheduledFor: string; // ISO date string
+    location?: string;
+    virtualLink?: string;
+    image?: any; // File object from image picker
+  }) {
+    console.log('🎯 Creating get-together:', {
+      ...getTogetherData,
+      image: getTogetherData.image ? 'Image present' : 'No image'
+    });
+
+    const token = await AsyncStorage.getItem('token');
+    
+    // Create FormData for multipart/form-data
+    const formData = new FormData();
+    
+    // Add all the text fields
+    formData.append('archId', getTogetherData.archId);
+    formData.append('title', getTogetherData.title);
+    formData.append('type', getTogetherData.type);
+    formData.append('scheduledFor', getTogetherData.scheduledFor);
+    
+    if (getTogetherData.description) {
+      formData.append('description', getTogetherData.description);
+    }
+    
+    if (getTogetherData.type === 'in-person' && getTogetherData.location) {
+      formData.append('location', getTogetherData.location);
+    }
+    
+    if (getTogetherData.type === 'virtual' && getTogetherData.virtualLink) {
+      formData.append('virtualLink', getTogetherData.virtualLink);
+    }
+    
+    // Add image if present
+    if (getTogetherData.image) {
+      // Handle different image formats (React Native vs Web)
+      if (getTogetherData.image.uri) {
+        // React Native image picker format
+        formData.append('image', {
+          uri: getTogetherData.image.uri,
+          type: getTogetherData.image.type || 'image/jpeg',
+          name: getTogetherData.image.fileName || 'image.jpg',
+        } as any);
+      } else if (getTogetherData.image instanceof File) {
+        // Web File object
+        formData.append('image', getTogetherData.image);
+      }
+    }
+
+    console.log('📦 FormData prepared, sending request...');
+
+    try {
+      // Use fetch directly for FormData (don't set Content-Type - let browser handle it)
+      const response = await fetch(`${API_BASE_URL}/gettogethers`, {
+        method: 'POST',
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+          // DON'T set Content-Type for FormData - browser will set it with boundary
+        },
+        body: formData,
+      });
+
+      console.log('📡 Create Response Status:', response.status);
+
+      let data;
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        console.log('⚠️ Non-JSON create response:', text);
+        data = { message: text };
+      }
+
+      if (!response.ok) {
+        console.log('❌ Create get-together failed:', data);
+        throw new Error(data.message || 'Failed to create get-together');
+      }
+
+      console.log('✅ Get-together created successfully');
+      return data;
+    } catch (error: any) {
+      console.error('❌ Error creating get-together:', error);
+      throw error;
+    }
+  }
+
+  // RSVP to a get-together (FIXED)
+  static async rsvpToGetTogether(getTogetherId: string, status: 'accepted' | 'declined' | 'pending') {
+    console.log('📝 RSVPing to get-together:', { getTogetherId, status });
+    
+    if (!getTogetherId) {
+      throw new Error('Get-together ID is required');
+    }
+    
+    if (!['accepted', 'declined', 'pending'].includes(status)) {
+      throw new Error('Invalid RSVP status');
+    }
+
+    return this.request(`/gettogethers/${getTogetherId}/rsvp`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  // Get a specific get-together by ID
+  static async getGetTogether(getTogetherId: string) {
+    console.log('🔍 Getting specific get-together:', getTogetherId);
+    
+    if (!getTogetherId) {
+      throw new Error('Get-together ID is required');
+    }
+    
+    return this.request(`/gettogethers/${getTogetherId}`);
+  }
+
+  // Get RSVP summary for a get-together
+  static async getGetTogetherRSVPSummary(getTogetherId: string) {
+    console.log('📊 Getting RSVP summary for:', getTogetherId);
+    
+    if (!getTogetherId) {
+      throw new Error('Get-together ID is required');
+    }
+    
+    return this.request(`/gettogethers/${getTogetherId}/rsvp-summary`);
+  }
+
+  // Update a get-together (creator only)
+  static async updateGetTogether(getTogetherId: string, updateData: {
+    title?: string;
+    description?: string;
+    type?: 'in-person' | 'virtual';
+    scheduledFor?: string;
+    location?: string;
+    virtualLink?: string;
+    status?: 'planning' | 'active' | 'completed';
+    image?: any;
+  }) {
+    console.log('✏️ Updating get-together:', getTogetherId, updateData);
+    
+    if (!getTogetherId) {
+      throw new Error('Get-together ID is required');
+    }
+
+    const token = await AsyncStorage.getItem('token');
+    
+    // If there's an image, use FormData, otherwise use JSON
+    if (updateData.image) {
+      const formData = new FormData();
+      
+      // Add all update fields to FormData
+      Object.entries(updateData).forEach(([key, value]) => {
+        if (key === 'image' && value) {
+          if (value.uri) {
+            // React Native format
+            formData.append('image', {
+              uri: value.uri,
+              type: value.type || 'image/jpeg',
+              name: value.fileName || 'image.jpg',
+            } as any);
+          } else if (value instanceof File) {
+            // Web File object
+            formData.append('image', value);
+          }
+        } else if (value !== undefined && value !== null) {
+          formData.append(key, value.toString());
+        }
+      });
+
+      const response = await fetch(`${API_BASE_URL}/gettogethers/${getTogetherId}`, {
+        method: 'PUT',
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update get-together');
+      }
+      return data;
+    } else {
+      // No image, use regular JSON request
+      return this.request(`/gettogethers/${getTogetherId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData),
+      });
+    }
+  }
+
+  // Delete a get-together (creator only)
+  static async deleteGetTogether(getTogetherId: string) {
+    console.log('🗑️ Deleting get-together:', getTogetherId);
+    
+    if (!getTogetherId) {
+      throw new Error('Get-together ID is required');
+    }
+    
+    return this.request(`/gettogethers/${getTogetherId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Add timeline entry to a get-together
+  static async addTimelineEntry(getTogetherId: string, entryData: {
+    type: 'note' | 'photo' | 'video';
+    content?: string;
+    media?: any[]; // Array of media files
+  }) {
+    console.log('📝 Adding timeline entry:', getTogetherId, entryData);
+    
+    if (!getTogetherId) {
+      throw new Error('Get-together ID is required');
+    }
+
+    const token = await AsyncStorage.getItem('token');
+    const formData = new FormData();
+    
+    formData.append('type', entryData.type);
+    if (entryData.content) {
+      formData.append('content', entryData.content);
+    }
+    
+    // Add media files if present
+    if (entryData.media && entryData.media.length > 0) {
+      entryData.media.forEach((mediaItem, index) => {
+        if (mediaItem.uri) {
+          // React Native format
+          formData.append('media', {
+            uri: mediaItem.uri,
+            type: mediaItem.type || 'image/jpeg',
+            name: mediaItem.fileName || `media_${index}.jpg`,
+          } as any);
+        } else if (mediaItem instanceof File) {
+          // Web File object
+          formData.append('media', mediaItem);
+        }
+      });
+    }
+
+    const response = await fetch(`${API_BASE_URL}/gettogethers/${getTogetherId}/timeline`, {
+      method: 'POST',
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to add timeline entry');
+    }
+    return data;
+  }
+
+  // Utility method to get headers (you had this but it's useful to keep)
+  static async getHeaders() {
+    const token = await AsyncStorage.getItem('token');
+    return {
+      'Content-Type': 'application/json',
       ...(token && { Authorization: `Bearer ${token}` }),
-      // Don't set Content-Type for FormData - let browser handle it
-    },
-    body: formData,
-  });
-  
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.message || 'Failed to create get-together');
+    };
   }
-  return data;
-}
 
-static async rsvpToGetTogether(getTogetherId: string, status: 'accepted' | 'declined' | 'pending') {
-  return this.request(`/gettogethers/${getTogetherId}/rsvp`, {
-    method: 'POST',
-    body: JSON.stringify({ status }),
-  });
-}
-
-static async getGetTogether(getTogetherId: string) {
-  return this.request(`/gettogethers/${getTogetherId}`);
-}
-
-static async getHeaders() {
-  const token = await AsyncStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
-}
 
   // Push notification methods
   static async updatePushToken(token: string) {

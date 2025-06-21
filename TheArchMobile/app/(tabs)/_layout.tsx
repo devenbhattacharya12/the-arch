@@ -54,5 +54,25 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
-  );
+  )
+  ;
 }
+// Add this test function to your component
+const testSimplePost = async () => {
+  try {
+    console.log('🧪 Testing simple POST...');
+    const response = await fetch('http://192.168.1.69:3000/api/gettogethers/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ test: 'data', timestamp: new Date().toISOString() })
+    });
+    
+    const result = await response.json();
+    console.log('🧪 Test result:', result);
+    alert('Test POST worked!');
+  } catch (error) {
+    console.error('🧪 Test failed:', error);
+  }
+};

@@ -29,6 +29,25 @@ const io = socketIo(server, {
 });
 
 // Middleware
+// Add this debugging middleware to server.js BEFORE your routes
+app.use('/api/gettogethers', (req, res, next) => {
+  console.log('\n🎯 GET-TOGETHERS ROUTE HIT:');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  console.log('Full Path:', req.path);
+  console.log('Params:', req.params);
+  console.log('Query:', req.query);
+  console.log('Headers:', {
+    'content-type': req.headers['content-type'],
+    'authorization': req.headers.authorization ? 'Bearer [TOKEN]' : 'No auth'
+  });
+  console.log('Body:', req.body);
+  console.log('Files:', req.files ? `${req.files.length} files` : 'No files');
+  console.log('File (single):', req.file ? 'File present' : 'No file');
+  console.log('---\n');
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

@@ -14,7 +14,7 @@ import { ApiService } from '../app/_layout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Add this near the top of the file, after imports
-const API_BASE_URL = 'http://10.0.0.51:3000/api';
+const API_BASE_URL = 'http://192.168.1.69:3000/api';
 
 interface ImageData {
   uri: string;

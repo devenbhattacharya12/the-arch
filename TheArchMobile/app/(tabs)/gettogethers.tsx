@@ -18,7 +18,7 @@ import EventDetailsModal from '../../components/EventDetailsModal';
 import { ApiService } from '../../app/_layout';
 
 // API Configuration - UPDATE THIS WITH YOUR IP ADDRESS
-const API_BASE_URL = 'http://10.0.0.51:3000/api';
+const API_BASE_URL = 'http://192.168.1.69:3000/api';
 
 // Configure calendar locale
 LocaleConfig.locales['en'] = {
@@ -69,6 +69,7 @@ export default function GetTogethersScreen() {
   const [selectedEvent, setSelectedEvent] = useState<GetTogether | null>(null);
   const [currentArchId, setCurrentArchId] = useState<string>('');
 
+  
   // Get marked dates for calendar
   const getMarkedDates = () => {
     const marked: any = {};
@@ -348,7 +349,27 @@ export default function GetTogethersScreen() {
     </View>
   );
 }
+// Add this test function to your component
+const testSimplePost = async () => {
+  try {
+    console.log('🧪 Testing simple POST...');
+    const response = await fetch('http://192.168.1.69:3000/api/gettogethers/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ test: 'data', timestamp: new Date().toISOString() })
+    });
+    
+    const result = await response.json();
+    console.log('🧪 Test result:', result);
+    alert('Test POST worked!');
+  } catch (error) {
+    console.error('🧪 Test failed:', error);
+  }
+};
 
+// Call this function when user presses a test button
 const styles = StyleSheet.create({
   container: {
     flex: 1,
