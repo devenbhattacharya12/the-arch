@@ -8,20 +8,6 @@ const cloudinary = require('cloudinary').v2;
 
 const router = express.Router();
 
-
-// Add this test route at the very beginning of your gettogethers.js file
-router.post('/test', (req, res) => {
-  console.log('🧪 TEST POST ROUTE HIT!');
-  console.log('Body:', req.body);
-  console.log('Headers:', req.headers);
-  res.json({ 
-    message: 'Test POST successful!', 
-    timestamp: new Date().toISOString(),
-    receivedBody: req.body 
-  });
-});
-
-
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -38,10 +24,19 @@ const upload = multer({
   },
 });
 
-// IMPORTANT: Routes are ordered from most specific to least specific
-// This prevents route conflicts where Express matches the wrong route
+// ==================== MOST SPECIFIC ROUTES FIRST ====================
 
-// ==================== SPECIFIC ROUTES FIRST ====================
+// Test route - MUST BE FIRST
+router.post('/test', (req, res) => {
+  console.log('🧪 GET-TOGETHERS TEST POST ROUTE HIT!');
+  console.log('Body:', req.body);
+  console.log('Headers:', req.headers);
+  res.json({ 
+    message: 'Get-togethers test POST successful!', 
+    timestamp: new Date().toISOString(),
+    receivedBody: req.body 
+  });
+});
 
 // Create a new get-together
 router.post('/', auth, upload.single('image'), async (req, res) => {
@@ -146,72 +141,9 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
   }
 });
 
-// Get get-togethers for an arch (with optional date filtering)
-router.get('/arch/:archId', auth, async (req, res) => {
-  console.log('🔍 Getting get-togethers for arch:', req.params.archId);
-  console.log('👤 User ID:', req.userId);
-  
-  try {
-    const { archId } = req.params;
-    const { month, year, startDate, endDate } = req.query;
-
-    // Verify user is member of this arch
-    const arch = await Arch.findById(archId);
-    if (!arch) {
-      console.log('❌ Arch not found:', archId);
-      return res.status(404).json({ message: 'Arch not found' });
-    }
-
-    const isMember = arch.members.some(member => member.user.equals(req.userId));
-    if (!isMember) {
-      console.log('❌ User not member of arch');
-      return res.status(403).json({ message: 'Not a member of this arch' });
-    }
-
-    // Build date filter
-    let dateFilter = {};
-    if (month && year) {
-      // Get events for specific month/year
-      const startOfMonth = new Date(year, month - 1, 1);
-      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
-      dateFilter = {
-        scheduledFor: {
-          $gte: startOfMonth,
-          $lte: endOfMonth
-        }
-      };
-      console.log('📅 Date filter applied:', dateFilter);
-    } else if (startDate && endDate) {
-      // Get events for date range
-      dateFilter = {
-        scheduledFor: {
-          $gte: new Date(startDate),
-          $lte: new Date(endDate)
-        }
-      };
-      console.log('📅 Date range filter applied:', dateFilter);
-    }
-
-    const getTogethers = await GetTogether.find({
-      arch: archId,
-      ...dateFilter
-    })
-    .populate('creator', 'name avatar')
-    .populate('arch', 'name')
-    .populate('invitees.user', 'name avatar')
-    .sort({ scheduledFor: 1 });
-
-    console.log(`✅ Found ${getTogethers.length} get-togethers`);
-    res.json(getTogethers);
-  } catch (error) {
-    console.error('❌ Error getting get-togethers:', error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
 // ==================== SPECIFIC ACTION ROUTES ====================
 
-// RSVP to a get-together - MUST come before general /:getTogetherId route
+// RSVP to a get-together
 router.post('/:getTogetherId/rsvp', auth, async (req, res) => {
   console.log('📝 RSVP route hit!');
   console.log('🎯 Get-together ID:', req.params.getTogetherId);
@@ -277,7 +209,7 @@ router.post('/:getTogetherId/rsvp', auth, async (req, res) => {
   }
 });
 
-// Add timeline entry (note/photo/video during event)
+// Add timeline entry
 router.post('/:getTogetherId/timeline', auth, upload.array('media', 5), async (req, res) => {
   console.log('📝 Timeline entry route hit!');
   console.log('🎯 Get-together ID:', req.params.getTogetherId);
@@ -285,7 +217,7 @@ router.post('/:getTogetherId/timeline', auth, upload.array('media', 5), async (r
   
   try {
     const { getTogetherId } = req.params;
-    const { type, content } = req.body; // type: 'note', 'photo', 'video'
+    const { type, content } = req.body;
 
     const getTogether = await GetTogether.findById(getTogetherId);
     if (!getTogether) {
@@ -325,7 +257,7 @@ router.post('/:getTogetherId/timeline', auth, upload.array('media', 5), async (r
           
           mediaUrls.push({
             url: result.secure_url,
-            thumbnail: result.secure_url // Cloudinary can generate thumbnails
+            thumbnail: result.secure_url
           });
         } catch (uploadError) {
           console.error('Media upload failed:', uploadError);
@@ -368,7 +300,70 @@ router.post('/:getTogetherId/timeline', auth, upload.array('media', 5), async (r
   }
 });
 
-// Get RSVP summary for a get-together - MUST come before general /:getTogetherId route
+// ==================== GENERAL GET ROUTES ====================
+
+// Get get-togethers for an arch
+router.get('/arch/:archId', auth, async (req, res) => {
+  console.log('🔍 Getting get-togethers for arch:', req.params.archId);
+  console.log('👤 User ID:', req.userId);
+  
+  try {
+    const { archId } = req.params;
+    const { month, year, startDate, endDate } = req.query;
+
+    // Verify user is member of this arch
+    const arch = await Arch.findById(archId);
+    if (!arch) {
+      console.log('❌ Arch not found:', archId);
+      return res.status(404).json({ message: 'Arch not found' });
+    }
+
+    const isMember = arch.members.some(member => member.user.equals(req.userId));
+    if (!isMember) {
+      console.log('❌ User not member of arch');
+      return res.status(403).json({ message: 'Not a member of this arch' });
+    }
+
+    // Build date filter
+    let dateFilter = {};
+    if (month && year) {
+      const startOfMonth = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+      dateFilter = {
+        scheduledFor: {
+          $gte: startOfMonth,
+          $lte: endOfMonth
+        }
+      };
+      console.log('📅 Date filter applied:', dateFilter);
+    } else if (startDate && endDate) {
+      dateFilter = {
+        scheduledFor: {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate)
+        }
+      };
+      console.log('📅 Date range filter applied:', dateFilter);
+    }
+
+    const getTogethers = await GetTogether.find({
+      arch: archId,
+      ...dateFilter
+    })
+    .populate('creator', 'name avatar')
+    .populate('arch', 'name')
+    .populate('invitees.user', 'name avatar')
+    .sort({ scheduledFor: 1 });
+
+    console.log(`✅ Found ${getTogethers.length} get-togethers`);
+    res.json(getTogethers);
+  } catch (error) {
+    console.error('❌ Error getting get-togethers:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get RSVP summary
 router.get('/:getTogetherId/rsvp-summary', auth, async (req, res) => {
   console.log('📊 RSVP summary route hit!');
   console.log('🎯 Get-together ID:', req.params.getTogetherId);
@@ -405,9 +400,9 @@ router.get('/:getTogetherId/rsvp-summary', auth, async (req, res) => {
   }
 });
 
-// ==================== GENERAL ROUTES LAST ====================
+// ==================== UPDATE/DELETE ROUTES ====================
 
-// Update get-together (creator only)
+// Update get-together
 router.put('/:getTogetherId', auth, upload.single('image'), async (req, res) => {
   console.log('✏️ Update get-together route hit!');
   console.log('🎯 Get-together ID:', req.params.getTogetherId);
@@ -486,7 +481,7 @@ router.put('/:getTogetherId', auth, upload.single('image'), async (req, res) => 
   }
 });
 
-// Delete get-together (creator only)
+// Delete get-together
 router.delete('/:getTogetherId', auth, async (req, res) => {
   console.log('🗑️ Delete get-together route hit!');
   console.log('🎯 Get-together ID:', req.params.getTogetherId);
@@ -521,8 +516,9 @@ router.delete('/:getTogetherId', auth, async (req, res) => {
   }
 });
 
-// Get a specific get-together by ID - MUST BE LAST!
-// This is the most general route and will match any /:getTogetherId pattern
+// ==================== MOST GENERAL ROUTE LAST ====================
+
+// Get specific get-together by ID - MUST BE ABSOLUTELY LAST!
 router.get('/:getTogetherId', auth, async (req, res) => {
   console.log('🔍 Get specific get-together route hit!');
   console.log('🎯 Get-together ID:', req.params.getTogetherId);
